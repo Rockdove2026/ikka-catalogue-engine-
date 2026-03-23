@@ -94,10 +94,75 @@ export default function App() {
   const [sortBy, setSortBy]          = useState("score");
 
   /* admin state */
-  const [adminView, setAdminView]    = useState("list"); // list | add | edit
+  const [adminView, setAdminView]    = useState("list"); // list | add | edit | csv
   const [editProduct, setEditProduct] = useState(null);
   const [saving, setSaving]          = useState(false);
   const [form, setForm]              = useState({ name: "", category: "", price: "", tier: "Silver", image_url: "", occasions: "", description: "", edible: false, fragile: false, customisable: true, popularity: 50 });
+  const [csvRows, setCsvRows]        = useState([]);
+  const [csvUploading, setCsvUploading] = useState(false);
+  const [csvStatus, setCsvStatus]    = useState(null);
+
+  /* parse CSV */
+  const parseCSV = (text) => {
+    const lines = text.trim().split("\n");
+    const headers = lines[0].split(",").map(h => h.trim().replace(/^"|"$/g, ""));
+    return lines.slice(1).filter(l => l.trim()).map(line => {
+      const vals = [];
+      let cur = "", inQ = false;
+      for (const ch of line) {
+        if (ch === '"') { inQ = !inQ; }
+        else if (ch === "," && !inQ) { vals.push(cur); cur = ""; }
+        else cur += ch;
+      }
+      vals.push(cur);
+      const row = {};
+      headers.forEach((h, i) => { row[h] = (vals[i] || "").trim().replace(/^"|"$/g, ""); });
+      return row;
+    });
+  };
+
+  const handleCSVFile = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => { setCsvRows(parseCSV(ev.target.result)); setCsvStatus(null); };
+    reader.readAsText(file);
+  };
+
+  const uploadCSV = async () => {
+    if (!csvRows.length) return;
+    setCsvUploading(true); setCsvStatus(null);
+    const errors = []; let ok = 0;
+    for (const row of csvRows) {
+      if (!row.name || !row.price) { errors.push("Skipped row: missing name or price"); continue; }
+      const bool = v => v === "true" || v === "1" || v === "yes";
+      const tierVal = row.tier || "Silver";
+      const p = parseFloat(row.price) || 0;
+      const payload = {
+        name: row.name, category: row.category || "", price: p, tier: tierVal,
+        description: row.description || "", occasions: row.occasions || "",
+        image_url: row.image_url || "", edible: bool(row.edible),
+        fragile: bool(row.fragile), customisable: bool(row.customisable !== "" ? row.customisable : "true"),
+        popularity: parseInt(row.popularity) || 50,
+        lead_time: tierVal === "Platinum" ? "in_stock" : tierVal === "Gold" ? "short" : "medium",
+        active: true,
+      };
+      const { data: ins, error } = await supabase.from("catalog").insert([payload]).select().single();
+      if (error) { errors.push(row.name + ": " + error.message); continue; }
+      if (ins) {
+        await supabase.from("pricing_tiers").insert([
+          { product_id: ins.id, min_qty: 1,    max_qty: 99,   price_per_unit: p },
+          { product_id: ins.id, min_qty: 100,  max_qty: 199,  price_per_unit: p * 0.85 },
+          { product_id: ins.id, min_qty: 200,  max_qty: 499,  price_per_unit: p * 0.80 },
+          { product_id: ins.id, min_qty: 500,  max_qty: 999,  price_per_unit: p * 0.70 },
+          { product_id: ins.id, min_qty: 1000, max_qty: null, price_per_unit: p * 0.60 },
+        ]);
+        ok++;
+      }
+    }
+    setCsvStatus({ ok, errors }); setCsvUploading(false);
+    if (ok > 0) { loadProducts(); setCsvRows([]); }
+  };
 
   /* load products + pricing tiers */
   const loadProducts = useCallback(async () => {
@@ -173,13 +238,15 @@ export default function App() {
         body: JSON.stringify({
           products: sel.map(p => ({
             name:          p.name,
-            category:      p.category,
+            origin:        p.category || "",
+            category:      p.category || "",
             price:         p._price,
             description:   p.description || "",
-            occasions:     p.occasions || "",
+            occasions:     Array.isArray(p.occasions) ? p.occasions : (p.occasions || "").split("|").map(s=>s.trim()).filter(Boolean),
             lead_time:     { in_stock:"In Stock", short:"15–30 days", medium:"45 days", long:"60 days" }[p.lead_time] || "In Stock",
+            min_order:     String(p.moq || 1),
             moq:           String(p.moq || 1),
-            customisation: p.customisable ? "Available" : "Not available",
+            customisation: p.customisable ? "Available on request" : "Not available",
             images:        p.image_url ? [p.image_url] : [],
           })),
           meta: {
@@ -187,7 +254,6 @@ export default function App() {
             occasion:     params.occasion !== "All" ? params.occasion : "Corporate Gifting",
             event_date:   "",
             valid_until:  "",
-            quantity:     qty,
           },
         }),
       });
@@ -591,7 +657,7 @@ export default function App() {
         <div className="admin-layout">
           <div className="admin-side">
             <div className="admin-s-title">Admin Panel</div>
-            {[["list","All Products"],["add","Add Product"]].map(([k,l]) => (
+            {[["list","All Products"],["add","Add Product"],["csv","Bulk Upload CSV"]].map(([k,l]) => (
               <button key={k} className={`admin-s-item${adminView===k?" on":""}`}
                 onClick={() => { setAdminView(k); setEditProduct(null); setForm({ name:"",category:"",price:"",tier:"Silver",image_url:"",occasions:"",description:"",edible:false,fragile:false,customisable:true,popularity:50 }); }}>
                 {l}
@@ -636,6 +702,59 @@ export default function App() {
                     </tbody>
                   </table>
                 </div>
+              </>
+            )}
+
+            {/* CSV Upload */}
+            {adminView === "csv" && (
+              <>
+                <div className="admin-eyebrow">Bulk Upload — CSV</div>
+                <div style={{marginBottom:20,padding:16,background:"#fff",border:`0.5px solid ${C.rule}`}}>
+                  <div style={{fontFamily:"'Playfair Display',serif",fontSize:14,fontWeight:700,color:C.ink,marginBottom:6}}>CSV Format</div>
+                  <div style={{fontFamily:"'EB Garamond',serif",fontSize:13,color:C.muted,lineHeight:1.7,marginBottom:12}}>
+                    Required columns: <strong>name, price</strong><br/>
+                    Optional: category, tier (Silver/Gold/Platinum), description, occasions (pipe-separated e.g. Diwali|Birthday), image_url, edible, fragile, customisable, popularity (0–100)
+                  </div>
+                  <a href="/product_upload_template.csv" download style={{fontFamily:"'EB Garamond',serif",fontSize:12,letterSpacing:1.5,textTransform:"uppercase",color:C.cobalt}}>
+                    Download template →
+                  </a>
+                </div>
+                <div style={{marginBottom:20}}>
+                  <label className="f-label">Select CSV file</label>
+                  <input type="file" accept=".csv" onChange={handleCSVFile}
+                    style={{display:"block",width:"100%",padding:"8px 0",fontFamily:"'EB Garamond',serif",fontSize:14,color:C.ink,borderBottom:`1px solid ${C.rule}`,background:"transparent",outline:"none",cursor:"pointer"}}/>
+                </div>
+                {csvRows.length > 0 && (
+                  <div style={{marginBottom:20}}>
+                    <div style={{fontFamily:"'EB Garamond',serif",fontSize:13,color:C.muted,marginBottom:10}}>{csvRows.length} rows ready to upload</div>
+                    <div style={{overflowX:"auto",maxHeight:280,border:`0.5px solid ${C.rule}`}}>
+                      <table style={{width:"100%",borderCollapse:"collapse",fontFamily:"'EB Garamond',serif",fontSize:13}}>
+                        <thead>
+                          <tr>{Object.keys(csvRows[0]).map(h=><th key={h} style={{padding:"6px 10px",textAlign:"left",borderBottom:`1px solid ${C.ink}`,fontSize:9,letterSpacing:1.5,textTransform:"uppercase",color:C.muted,fontWeight:400,whiteSpace:"nowrap"}}>{h}</th>)}</tr>
+                        </thead>
+                        <tbody>
+                          {csvRows.slice(0,5).map((r,i)=>(
+                            <tr key={i} style={{borderBottom:`0.5px solid ${C.rule}`}}>
+                              {Object.values(r).map((v,j)=><td key={j} style={{padding:"6px 10px",color:C.ink,whiteSpace:"nowrap",maxWidth:160,overflow:"hidden",textOverflow:"ellipsis"}}>{v}</td>)}
+                            </tr>
+                          ))}
+                          {csvRows.length > 5 && <tr><td colSpan={Object.keys(csvRows[0]).length} style={{padding:"6px 10px",color:C.muted,fontSize:12}}>…and {csvRows.length-5} more rows</td></tr>}
+                        </tbody>
+                      </table>
+                    </div>
+                    <button onClick={uploadCSV} disabled={csvUploading} className="f-save" style={{marginTop:16}}>
+                      {csvUploading ? `Uploading…` : `Upload ${csvRows.length} Products →`}
+                    </button>
+                  </div>
+                )}
+                {csvStatus && (
+                  <div style={{padding:16,background:csvStatus.errors.length===0?"#f0f8f0":"#fff8f0",border:`0.5px solid ${csvStatus.errors.length===0?C.green:C.amber}`}}>
+                    <div style={{fontFamily:"'Playfair Display',serif",fontSize:15,fontWeight:700,color:csvStatus.errors.length===0?C.green:C.amber,marginBottom:6}}>
+                      {csvStatus.ok} product{csvStatus.ok!==1?"s":""} uploaded successfully
+                    </div>
+                    {csvStatus.errors.map((e,i)=><div key={i} style={{fontSize:12,color:C.red,fontFamily:"'EB Garamond',serif"}}>{e}</div>)}
+                  </div>
+                )}
               </>
             )}
 
