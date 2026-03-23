@@ -238,14 +238,13 @@ export default function App() {
         body: JSON.stringify({
           products: sel.map(p => ({
             name:          p.name,
-            origin:        p.category || "",
-            category:      p.category || "",
-            price:         p._price,
+            origin:        p.category || "India",
+            category:      p.category || "General",
+            price:         Math.round(p._price),
             description:   p.description || "",
             occasions:     Array.isArray(p.occasions) ? p.occasions : (p.occasions || "").split("|").map(s=>s.trim()).filter(Boolean),
             lead_time:     { in_stock:"In Stock", short:"15–30 days", medium:"45 days", long:"60 days" }[p.lead_time] || "In Stock",
-            min_order:     String(p.moq || 1),
-            moq:           String(p.moq || 1),
+            moq:           (p.moq || 1) + " unit" + ((p.moq || 1) > 1 ? "s" : ""),
             customisation: p.customisable ? "Available on request" : "Not available",
             images:        p.image_url ? [p.image_url] : [],
           })),
