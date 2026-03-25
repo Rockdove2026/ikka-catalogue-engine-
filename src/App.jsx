@@ -703,7 +703,6 @@ export default function App() {
               {hasTagFilters&&<div style={{fontSize:11,color:"#5a8a5a",marginTop:4}}>Tag filters active</div>}
             </div>
           </div>
-          </div>
 
           <div className="main">
             {loading?<div className="loading">Loading catalogue…</div>:(
