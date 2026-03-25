@@ -324,7 +324,7 @@ export default function App() {
         .hdr-name em { font-style: italic; color: ${C.blue}; }
         .hdr-sub { font-size: 10px; letter-spacing: 3px; text-transform: uppercase; color: #888; }
         .hdr-tabs { display: flex; gap: 2px; }
-        .hdr-tab { padding: 8px 20px; background: none; border: none; font-size: 11px; letter-spacing: 2px; text-transform: uppercase; color: #fff; cursor: pointer; opacity: 0.5; border-bottom: 2px solid transparent; }
+        .hdr-tab { padding: 8px 20px; background: none; border: none; font-size: 13px; letter-spacing: 2.5px; text-transform: uppercase; color: #fff; cursor: pointer; opacity: 0.4; font-weight: 500; border-bottom: 2px solid transparent; }
         .hdr-tab.on { opacity: 1; border-bottom-color: ${C.roseMid}; }
 
         /* ── Layout ── */
