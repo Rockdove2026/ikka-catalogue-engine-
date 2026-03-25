@@ -322,7 +322,7 @@ export default function App() {
         .hdr-brand { display: flex; align-items: baseline; gap: 12px; }
         .hdr-name { font-family: 'Cormorant Garamond', serif; font-size: 22px; font-weight: 300; color: #fff; letter-spacing: 1px; }
         .hdr-name em { font-style: italic; color: ${C.blue}; }
-        .hdr-sub { font-size: 10px; letter-spacing: 3px; text-transform: uppercase; color: #5a4a40; }
+        .hdr-sub { font-size: 10px; letter-spacing: 3px; text-transform: uppercase; color: #888; }
         .hdr-tabs { display: flex; gap: 2px; }
         .hdr-tab { padding: 8px 20px; background: none; border: none; font-size: 11px; letter-spacing: 2px; text-transform: uppercase; color: #fff; cursor: pointer; opacity: 0.5; border-bottom: 2px solid transparent; }
         .hdr-tab.on { opacity: 1; border-bottom-color: ${C.roseMid}; }
