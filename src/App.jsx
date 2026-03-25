@@ -478,7 +478,7 @@ export default function App() {
         .pf-save:disabled { opacity: 0.6; cursor: not-allowed; }
         .pf-cancel { padding: 12px 20px; border: 0.5px solid ${C.rule}; background: transparent; color: ${C.muted}; font-size: 11px; letter-spacing: 2px; text-transform: uppercase; cursor: pointer; }
         .pf-required { color: ${C.roseMid}; }
-        .status-badge { font-size: 9px; letter-spacing: 1px; text-transform: uppercase; padding: 3px 9px; border-radius: 99px; font-weight: 600; }
+        .status-badge { font-size: 9px; letter-spacing: 1px; text-transform: uppercase; padding: 3px 9px; border-radius: 99px; font-weight: 700; }
         .tag-overlay { position: fixed; inset: 0; background: rgba(26,22,20,0.65); z-index: 300; display: flex; align-items: stretch; justify-content: flex-end; }
         .tag-panel { background: ${C.stone}; width: min(680px, 100vw); display: flex; flex-direction: column; overflow: hidden; }
         .tag-panel-head { background: ${C.sidebar}; padding: 20px 28px; flex-shrink: 0; }
