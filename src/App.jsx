@@ -235,7 +235,8 @@ export default function App() {
         // Tag exclusions — hard filter
         if (hasTagFilters) {
           const ts = tagScore(p.id);
-          if (ts === -1) return false; // excluded tag match
+          if (ts === -1) return false;
+          if (ts === 0 && (tagFilter.intent || tagFilter.audience || tagFilter.style)) return false;
         }
         return true;
       })
