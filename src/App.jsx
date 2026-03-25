@@ -413,8 +413,8 @@ export default function App() {
         .admin-act { font-family: 'EB Garamond', serif; font-size: 10px; letter-spacing: 1px; text-transform: uppercase; padding: 3px 10px; border: 0.5px solid; background: transparent; cursor: pointer; }
 
         /* ── Form ── */
-        .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
-        .f-field { margin-bottom: 20px; }
+        .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 24px; }
+        .f-field { margin-bottom: 10px; }
         .f-label { font-size: 10px; letter-spacing: 3px; text-transform: uppercase; color: ${C.ink}; display: block; margin-bottom: 8px; }
         .f-inp { display: block; width: 100%; padding: 6px 0 9px; background: transparent; border: none; border-bottom: 1px solid ${C.rule}; font-family: 'Cormorant Garamond', serif; font-size: 17px; font-style: italic; color: ${C.ink}; outline: none; }
         .f-inp:focus { border-bottom-color: ${C.cobalt}; }
