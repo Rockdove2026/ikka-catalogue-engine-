@@ -815,6 +815,7 @@ export default function App() {
                             <td className="admin-td" style={{display:"flex",gap:6}}>
                               <button className="admin-act" style={{borderColor:C.green,color:C.green}} onClick={()=>openTagReview(p)}>Tag →</button>
                               <button className="admin-act" style={{borderColor:C.cobalt,color:C.cobalt}} onClick={()=>{setEditProduct(p);setForm({name:p.name,category:p.category||"",price:String(p.price),tier:p.tier||"Silver",image_url:p.image_url||"",occasions:p.occasions||"",description:p.description||"",edible:p.edible||false,fragile:p.fragile||false,customisable:p.customisable!==false,popularity:p.popularity||50});setAdminView("edit");}}>Edit →</button>
+              <button className="admin-act" style={{borderColor:C.red,color:C.red}} onClick={async()=>{if(window.confirm(`Delete ${p.name}? This cannot be undone.`)){await supabase.from("product_tags").delete().eq("product_id",p.id);await supabase.from("pricing_tiers").delete().eq("product_id",p.id);await supabase.from("catalog").delete().eq("id",p.id);loadProducts();}}}>Delete</button>
                             </td>
                           </tr>
                         );
