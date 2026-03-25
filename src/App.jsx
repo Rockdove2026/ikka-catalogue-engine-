@@ -335,7 +335,7 @@ export default function App() {
         /* ── Sidebar form ── */
         .s-title { font-family: 'Playfair Display', serif; font-size: 22px; font-weight: 900; color: ${C.ink}; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 4px; }
         .s-sub { font-size: 12px; color: ${C.muted}; margin-bottom: 24px; }
-        .s-section { font-size: 9px; letter-spacing: 3.5px; text-transform: uppercase; color: ${C.ink}; font-weight: 700; padding-bottom: 7px; border-bottom: 1.5px solid ${C.ink}; margin-bottom: 14px; margin-top: 26px; }
+        .s-section { font-size: 11px; letter-spacing: 2.5px; text-transform: uppercase; color: ${C.ink}; font-weight: 700; padding-bottom: 7px; border-bottom: 1.5px solid ${C.ink}; margin-bottom: 14px; margin-top: 26px; }
         .s-field { margin-bottom: 16px; }
         .s-label { font-size: 10px; letter-spacing: 2px; text-transform: uppercase; color: ${C.ink}; display: block; margin-bottom: 6px; }
         .s-inp { display: block; width: 100%; padding: 7px 0 8px; background: transparent; border: none; border-bottom: 1px solid ${C.rule}; font-size: 16px; font-style: italic; font-family: 'Cormorant Garamond', serif; color: ${C.ink}; outline: none; }
