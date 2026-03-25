@@ -333,7 +333,7 @@ export default function App() {
         .main { padding: 28px 32px 60px; }
 
         /* ── Sidebar form ── */
-        .s-title { font-family: 'Playfair Display', serif; font-size: 18px; font-weight: 700; color: ${C.ink}; margin-bottom: 4px; }
+        .s-title { font-family: 'Playfair Display', serif; font-size: 22px; font-weight: 900; color: ${C.ink}; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 4px; }
         .s-sub { font-size: 12px; color: ${C.muted}; margin-bottom: 24px; }
         .s-section { font-size: 9px; letter-spacing: 3.5px; text-transform: uppercase; color: ${C.ink}; font-weight: 700; padding-bottom: 7px; border-bottom: 1.5px solid ${C.ink}; margin-bottom: 14px; margin-top: 26px; }
         .s-field { margin-bottom: 16px; }
