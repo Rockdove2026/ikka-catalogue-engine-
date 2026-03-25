@@ -596,6 +596,31 @@ export default function App() {
             <div className="s-title">Find gifts</div>
             <div className="s-sub">Describe what you need or use the filters below.</div>
 
+            {/* ── Free text search ── */}
+            <div style={{marginBottom:20}}>
+              <div style={{display:"flex",gap:6,alignItems:"center"}}>
+                <input
+                  type="text"
+                  placeholder="e.g. festive gifts for CXOs..."
+                  value={freeQuery}
+                  onChange={e=>setFreeQuery(e.target.value)}
+                  onKeyDown={e=>{if(e.key==="Enter")interpretQuery(freeQuery);}}
+                  style={{flex:1,padding:"9px 10px",background:"#F5F0EA",border:"1px solid #C8B8B0",borderRadius:4,fontSize:14,fontFamily:"'EB Garamond',serif",color:"#1A1614",outline:"none",minWidth:0,display:"block"}}
+                />
+                {freeQuery&&<button onClick={clearSearch} style={{background:"none",border:"none",color:"#8A7A72",cursor:"pointer",fontSize:18,padding:"0 4px",lineHeight:1,flexShrink:0}}>×</button>}
+              </div>
+              <button onClick={()=>interpretQuery(freeQuery)} disabled={!freeQuery.trim()||queryLoading}
+                style={{display:"block",width:"100%",marginTop:6,padding:"8px",background:queryLoading?"#8A7A72":"#1A1614",color:"#fff",border:"none",fontSize:10,letterSpacing:2,textTransform:"uppercase",cursor:!freeQuery.trim()||queryLoading?"not-allowed":"pointer",opacity:!freeQuery.trim()?0.4:1,fontFamily:"inherit"}}>
+                {queryLoading?"Interpreting…":"Search →"}
+              </button>
+              {interpreted&&!queryLoading&&(
+                <div style={{display:"flex",alignItems:"center",gap:6,background:"#E1F5EE",border:"0.5px solid #1D9E75",color:"#085041",padding:"5px 10px",borderRadius:99,fontSize:11,marginTop:8}}>
+                  <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="#1D9E75" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="2,6 5,9 10,3"/></svg>
+                  <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{interpreted.summary}</span>
+                </div>
+              )}
+            </div>
+
             <div className="s-section">Budget & Quantity</div>
             <div className="s-field">
               <label className="s-label">Budget per unit (₹)</label>
@@ -604,7 +629,7 @@ export default function App() {
             <div className="s-field">
               <label className="s-label">Quantity (units)</label>
               <input className="s-inp" type="number" placeholder="e.g. 100" value={params.qty} onChange={e=>setParams(p=>({...p,qty:e.target.value}))}/>
-              {params.qty&&parseInt(params.qty)>=100&&<div style={{fontSize:11,color:C.green,marginTop:4}}>Volume pricing applies from 100+ units</div>}
+              {params.qty&&parseInt(params.qty)>=100&&<div style={{fontSize:11,color:"#5a8a5a",marginTop:4}}>Volume pricing applies from 100+ units</div>}
             </div>
 
             <div className="s-section">Timeline & Occasion</div>
@@ -627,24 +652,7 @@ export default function App() {
               </div>
             ))}
 
-
-            {/* ── Free text search ── */}
-            <div className="search-wrap">
-              <div className="search-box">
-                <input className={`search-inp${queryLoading?" loading":""}`} type="text" placeholder="e.g. festive gifts for CXOs, no leather…" value={freeQuery} onChange={e=>onFreeQueryChange(e.target.value)}/>
-                {freeQuery && <button className="search-clear" onClick={clearSearch}>×</button>}
-              </div>
-              {queryLoading && <div className="search-hint">Interpreting your search…</div>}
-              {interpreted && !queryLoading && (
-                <div className="interp-pill">
-                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="#1D9E75" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="2,6 5,9 10,3"/></svg>
-                  <span className="interp-text">{interpreted.summary}</span>
-                </div>
-              )}
-            </div>
-
             <div className="s-section">Smart Filters</div>
-
             <div className="s-field">
               <label className="s-label">Intent</label>
               <select className="s-sel" value={tagFilter.intent} onChange={e=>setTagFilter(prev=>({...prev,intent:e.target.value}))}>
@@ -652,7 +660,6 @@ export default function App() {
                 {intentOptions.map(t=><option key={t} value={t}>{t}</option>)}
               </select>
             </div>
-
             <div className="s-field">
               <label className="s-label">Audience</label>
               <select className="s-sel" value={tagFilter.audience} onChange={e=>setTagFilter(prev=>({...prev,audience:e.target.value}))}>
@@ -660,7 +667,6 @@ export default function App() {
                 {audienceOptions.map(t=><option key={t} value={t}>{t}</option>)}
               </select>
             </div>
-
             <div className="s-field">
               <label className="s-label">Style</label>
               <select className="s-sel" value={tagFilter.style} onChange={e=>setTagFilter(prev=>({...prev,style:e.target.value}))}>
@@ -668,10 +674,9 @@ export default function App() {
                 {styleOptions.map(t=><option key={t} value={t}>{t}</option>)}
               </select>
             </div>
-
             <div className="s-field">
               <label className="s-label">Exclude tags</label>
-              {tagFilter.exclude_tags.length>0 && (
+              {tagFilter.exclude_tags.length>0&&(
                 <div className="excl-chips">
                   {tagFilter.exclude_tags.map(t=>(
                     <span key={t} className="excl-chip">{t}<button onClick={()=>removeExcludeTag(t)}>×</button></span>
@@ -681,7 +686,7 @@ export default function App() {
               <input className="excl-inp" type="text" placeholder="e.g. leather, alcohol…" value={excludeInput}
                 onChange={e=>setExcludeInput(e.target.value)}
                 onKeyDown={e=>{if(e.key==="Enter"||e.key===","||e.key===" "){e.preventDefault();addExcludeTag(excludeInput);}}}/>
-              <div style={{fontSize:10,color:C.muted,marginTop:3}}>Press Enter or comma to add</div>
+              <div style={{fontSize:10,color:"#8A7A72",marginTop:3}}>Press Enter or comma to add</div>
             </div>
 
             <div className="s-section">Sort Results By</div>
@@ -691,12 +696,13 @@ export default function App() {
               <option value="price_desc">Price high → low</option>
             </select>
 
-            <div style={{marginTop:20,padding:"14px 0",borderTop:`0.5px solid ${C.rule}`}}>
-              <div style={{fontSize:10,letterSpacing:2,textTransform:"uppercase",color:C.muted,marginBottom:6}}>Results</div>
-              <div style={{fontFamily:"'Playfair Display',serif",fontSize:28,fontWeight:900,color:C.ink}}>{results.length}</div>
-              <div style={{fontSize:12,color:C.muted}}>products matched · {selected.size} selected</div>
-              {hasTagFilters&&<div style={{fontSize:11,color:C.green,marginTop:4}}>Tag filters active</div>}
+            <div style={{marginTop:20,padding:"14px 0",borderTop:"0.5px solid #C8B8B0"}}>
+              <div style={{fontSize:10,letterSpacing:2,textTransform:"uppercase",color:"#8A7A72",marginBottom:6}}>Results</div>
+              <div style={{fontFamily:"'Playfair Display',serif",fontSize:28,fontWeight:900,color:"#1A1614"}}>{results.length}</div>
+              <div style={{fontSize:12,color:"#8A7A72"}}>products matched · {selected.size} selected</div>
+              {hasTagFilters&&<div style={{fontSize:11,color:"#5a8a5a",marginTop:4}}>Tag filters active</div>}
             </div>
+          </div>
           </div>
 
           <div className="main">
