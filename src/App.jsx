@@ -232,11 +232,17 @@ export default function App() {
         const leadDays = { in_stock:3, short:30, medium:45, long:60 };
         if ((leadDays[p.lead_time] || 3) > days * 1.2) return false;
         if (qty < (p.moq || 1)) return false;
-        // Tag exclusions — hard filter
+        // Tag filters — exclude and require
         if (hasTagFilters) {
-          const ts = tagScore(p.id);
-          if (ts === -1) return false;
-          if (ts === 0 && (tagFilter.intent || tagFilter.audience || tagFilter.style)) return false;
+          const pTags = productTagMap[p.id] || [];
+          const tagSet = new Set(pTags.map(t => t.tag));
+          // Hard exclusions
+          for (const ex of tagFilter.exclude_tags) { if (tagSet.has(ex)) return false; }
+          // Positive filters — product must match at least one active filter
+          const intentMatch = !tagFilter.intent || tagSet.has(tagFilter.intent);
+          const audienceMatch = !tagFilter.audience || tagSet.has(tagFilter.audience);
+          const styleMatch = !tagFilter.style || tagSet.has(tagFilter.style);
+          if (!intentMatch && !audienceMatch && !styleMatch) return false;
         }
         return true;
       })
@@ -430,7 +436,7 @@ export default function App() {
         /* Search box */
         .search-wrap{margin-bottom:20px;}
         .search-box{position:relative;}
-        .search-inp{display:block;width:100%;padding:10px 36px 10px 14px;background:${C.stone};border:1px solid ${C.rule};border-radius:4px;font-size:15px;font-family:'Cormorant Garamond',serif;font-style:italic;color:${C.ink};outline:none;transition:border-color 0.15s;}
+        .search-inp{display:block;width:100%;padding:9px 36px 9px 12px;background:${C.stone};border:1px solid ${C.rule};border-radius:4px;font-size:14px;font-family:'EB Garamond',serif;color:${C.ink};outline:none;transition:border-color 0.15s;}
         .search-inp:focus{border-color:${C.cobalt};background:#fff;}
         .search-inp.loading{border-color:${C.amber};}
         .search-clear{position:absolute;right:10px;top:50%;transform:translateY(-50%);background:none;border:none;color:${C.muted};cursor:pointer;font-size:16px;line-height:1;}
@@ -590,6 +596,38 @@ export default function App() {
             <div className="s-title">Find gifts</div>
             <div className="s-sub">Describe what you need or use the filters below.</div>
 
+            <div className="s-section">Budget & Quantity</div>
+            <div className="s-field">
+              <label className="s-label">Budget per unit (₹)</label>
+              <input className="s-inp" type="number" placeholder="e.g. 3000" value={params.budget} onChange={e=>setParams(p=>({...p,budget:e.target.value}))}/>
+            </div>
+            <div className="s-field">
+              <label className="s-label">Quantity (units)</label>
+              <input className="s-inp" type="number" placeholder="e.g. 100" value={params.qty} onChange={e=>setParams(p=>({...p,qty:e.target.value}))}/>
+              {params.qty&&parseInt(params.qty)>=100&&<div style={{fontSize:11,color:C.green,marginTop:4}}>Volume pricing applies from 100+ units</div>}
+            </div>
+
+            <div className="s-section">Timeline & Occasion</div>
+            <div className="s-field">
+              <label className="s-label">Days until event</label>
+              <input className="s-inp" type="number" placeholder="e.g. 21" value={params.days} onChange={e=>setParams(p=>({...p,days:e.target.value}))}/>
+            </div>
+            <div className="s-field">
+              <label className="s-label">Occasion</label>
+              <select className="s-sel" value={params.occasion} onChange={e=>setParams(p=>({...p,occasion:e.target.value}))}>
+                {OCCASIONS.map(o=><option key={o}>{o}</option>)}
+              </select>
+            </div>
+
+            <div className="s-section">Restrictions</div>
+            {[{key:"excludeEdible",label:"Exclude edible items",sub:"No food or beverage products"},{key:"excludeFragile",label:"Exclude fragile items",sub:"Safe for courier / bulk shipping"}].map(r=>(
+              <div className="s-toggle" key={r.key}>
+                <div><div className="s-toggle-lbl">{r.label}</div><div className="s-toggle-sub">{r.sub}</div></div>
+                <input type="checkbox" className="s-chk" checked={params[r.key]} onChange={e=>setParams(p=>({...p,[r.key]:e.target.checked}))}/>
+              </div>
+            ))}
+
+
             {/* ── Free text search ── */}
             <div className="search-wrap">
               <div className="search-box">
@@ -645,37 +683,6 @@ export default function App() {
                 onKeyDown={e=>{if(e.key==="Enter"||e.key===","||e.key===" "){e.preventDefault();addExcludeTag(excludeInput);}}}/>
               <div style={{fontSize:10,color:C.muted,marginTop:3}}>Press Enter or comma to add</div>
             </div>
-
-            <div className="s-section">Budget & Quantity</div>
-            <div className="s-field">
-              <label className="s-label">Budget per unit (₹)</label>
-              <input className="s-inp" type="number" placeholder="e.g. 3000" value={params.budget} onChange={e=>setParams(p=>({...p,budget:e.target.value}))}/>
-            </div>
-            <div className="s-field">
-              <label className="s-label">Quantity (units)</label>
-              <input className="s-inp" type="number" placeholder="e.g. 100" value={params.qty} onChange={e=>setParams(p=>({...p,qty:e.target.value}))}/>
-              {params.qty&&parseInt(params.qty)>=100&&<div style={{fontSize:11,color:C.green,marginTop:4}}>Volume pricing applies from 100+ units</div>}
-            </div>
-
-            <div className="s-section">Timeline & Occasion</div>
-            <div className="s-field">
-              <label className="s-label">Days until event</label>
-              <input className="s-inp" type="number" placeholder="e.g. 21" value={params.days} onChange={e=>setParams(p=>({...p,days:e.target.value}))}/>
-            </div>
-            <div className="s-field">
-              <label className="s-label">Occasion</label>
-              <select className="s-sel" value={params.occasion} onChange={e=>setParams(p=>({...p,occasion:e.target.value}))}>
-                {OCCASIONS.map(o=><option key={o}>{o}</option>)}
-              </select>
-            </div>
-
-            <div className="s-section">Restrictions</div>
-            {[{key:"excludeEdible",label:"Exclude edible items",sub:"No food or beverage products"},{key:"excludeFragile",label:"Exclude fragile items",sub:"Safe for courier / bulk shipping"}].map(r=>(
-              <div className="s-toggle" key={r.key}>
-                <div><div className="s-toggle-lbl">{r.label}</div><div className="s-toggle-sub">{r.sub}</div></div>
-                <input type="checkbox" className="s-chk" checked={params[r.key]} onChange={e=>setParams(p=>({...p,[r.key]:e.target.checked}))}/>
-              </div>
-            ))}
 
             <div className="s-section">Sort Results By</div>
             <select className="s-sel" value={sortBy} onChange={e=>setSortBy(e.target.value)}>
