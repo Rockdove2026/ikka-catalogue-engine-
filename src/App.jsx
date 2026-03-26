@@ -759,32 +759,62 @@ export default function App() {
                   </div>
                 )}
                 {showPreview&&selectedProducts.length>0&&(
-                  <div style={{marginTop:2,border:`1px solid ${C.rule}`,background:"#fff"}}>
-                    <div style={{background:C.sidebar,padding:"24px 32px"}}>
-                      <div style={{fontSize:9,letterSpacing:".2em",color:"#555",textTransform:"uppercase",marginBottom:8}}>Ikka Dukka · Curated Gift Catalogue</div>
-                      <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:24,color:"#fff",fontWeight:300}}>{params.occasion!=="All"?params.occasion:"Corporate Gifting"} Collection</div>
-                    </div>
-                    <div style={{padding:"24px 32px"}}>
-                      {selectedProducts.map((p,i)=>(
-                        <div key={p.id} style={{display:"flex",gap:18,padding:"16px 0",borderBottom:i<selectedProducts.length-1?`1px solid #f0ece6`:"none"}}>
-                          <div style={{width:56,height:56,flexShrink:0,background:C.warm,overflow:"hidden"}}>
-                            {p.image_url?.startsWith("http")?<img src={p.image_url} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/>:<div style={{width:"100%",height:"100%",display:"flex",alignItems:"center",justifyContent:"center",fontSize:24}}>{p.fb_icon||"🎁"}</div>}
-                          </div>
-                          <div style={{flex:1}}>
-                            <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:16,color:C.ink,marginBottom:4}}>{p.name}</div>
-                            <div style={{fontSize:10,color:C.muted,textTransform:"uppercase",letterSpacing:1}}>{p.category}</div>
-                          </div>
-                          <div style={{textAlign:"right",flexShrink:0}}>
-                            <div style={{fontFamily:"'Playfair Display',serif",fontSize:18,color:C.ink}}>₹{p._price.toLocaleString("en-IN")}</div>
-                            <div style={{fontSize:11,color:C.muted}}>/unit</div>
-                          </div>
+                  <div style={{position:"fixed",inset:0,background:"#fff",zIndex:150,overflowY:"auto"}}>
+                    {/* Header */}
+                    <div style={{background:C.sidebar,padding:"20px 48px",display:"flex",justifyContent:"space-between",alignItems:"center",position:"sticky",top:0,zIndex:10}}>
+                      <div>
+                        <div style={{fontSize:9,letterSpacing:"3px",color:"#555",textTransform:"uppercase",marginBottom:4}}>Ikka Dukka · Curated Gift Catalogue</div>
+                        <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:26,color:"#fff",fontWeight:300,letterSpacing:1}}>
+                          {params.occasion!=="All"?params.occasion:"Corporate Gifting"} Collection
                         </div>
-                      ))}
-                      <div style={{marginTop:20,paddingTop:16,borderTop:`2px solid ${C.ink}`,display:"flex",justifyContent:"flex-end"}}>
+                      </div>
+                      <div style={{display:"flex",alignItems:"center",gap:20}}>
+                        <div style={{textAlign:"right"}}>
+                          <div style={{fontSize:9,letterSpacing:2,textTransform:"uppercase",color:"#888",marginBottom:2}}>{selectedProducts.length} products selected</div>
+                          <div style={{fontFamily:"'Playfair Display',serif",fontSize:22,color:"#fff"}}>₹{totalBudget.toLocaleString("en-IN")}</div>
+                          <div style={{fontSize:10,color:"#666"}}>{params.qty||1} units · excl. GST</div>
+                        </div>
+                        <button onClick={()=>setShowPreview(false)} style={{background:"transparent",border:"1px solid #444",color:"#fff",padding:"9px 18px",fontSize:10,letterSpacing:2,textTransform:"uppercase",cursor:"pointer",fontFamily:"inherit",flexShrink:0}}>Close ×</button>
+                      </div>
+                    </div>
+
+                    {/* Product grid */}
+                    <div style={{padding:"48px",maxWidth:1200,margin:"0 auto"}}>
+                      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:2,background:C.rule}}>
+                        {selectedProducts.map(p=>(
+                          <div key={p.id} style={{background:"#fff",overflow:"hidden"}}>
+                            {/* Image */}
+                            <div style={{width:"100%",paddingBottom:"80%",position:"relative",overflow:"hidden",background:C.warm}}>
+                              {p.image_url?.startsWith("http")
+                                ?<img src={p.image_url} alt={p.name} style={{position:"absolute",inset:0,width:"100%",height:"100%",objectFit:"cover"}}/>
+                                :<div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:64}}>{p.fb_icon||"🎁"}</div>
+                              }
+                              {/* Tier badge */}
+                              <div style={{position:"absolute",top:12,right:12,background:"rgba(14,12,11,0.7)",color:"#fff",fontSize:9,letterSpacing:1.5,textTransform:"uppercase",padding:"3px 10px"}}>{p.tier}</div>
+                            </div>
+                            {/* Info */}
+                            <div style={{padding:"18px 20px 22px"}}>
+                              <div style={{fontSize:9,letterSpacing:2,textTransform:"uppercase",color:C.muted,marginBottom:6}}>{p.category}</div>
+                              <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:20,color:C.ink,lineHeight:1.3,marginBottom:10}}>{p.name}</div>
+                              <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",borderTop:`0.5px solid ${C.rule}`,paddingTop:10}}>
+                                <div style={{fontFamily:"'Playfair Display',serif",fontSize:22,fontWeight:900,color:C.ink}}>₹{p._price.toLocaleString("en-IN")}</div>
+                                <div style={{fontSize:11,color:C.muted}}>per unit</div>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Footer summary */}
+                      <div style={{marginTop:48,paddingTop:24,borderTop:`1.5px solid ${C.ink}`,display:"flex",justifyContent:"space-between",alignItems:"flex-end"}}>
+                        <div>
+                          <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:20,color:C.ink,marginBottom:4}}>Ikka Dukka Studio Private Limited</div>
+                          <div style={{fontSize:11,color:C.muted}}>www.ikkadukka.com · hello@ikkadukka.com</div>
+                        </div>
                         <div style={{textAlign:"right"}}>
                           <div style={{fontSize:9,letterSpacing:2,textTransform:"uppercase",color:C.muted,marginBottom:4}}>Total Estimate</div>
-                          <div style={{fontFamily:"'Playfair Display',serif",fontSize:28,color:C.ink}}>₹{totalBudget.toLocaleString("en-IN")}</div>
-                          <div style={{fontSize:11,color:C.muted}}>{params.qty||1} units · {selectedProducts.length} products · excl. GST</div>
+                          <div style={{fontFamily:"'Playfair Display',serif",fontSize:32,fontWeight:900,color:C.ink}}>₹{totalBudget.toLocaleString("en-IN")}</div>
+                          <div style={{fontSize:11,color:C.muted}}>{params.qty||1} units × {selectedProducts.length} products · excl. GST</div>
                         </div>
                       </div>
                     </div>
