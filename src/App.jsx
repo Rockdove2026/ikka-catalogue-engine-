@@ -238,11 +238,10 @@ export default function App() {
           const tagSet = new Set(pTags.map(t => t.tag));
           // Hard exclusions
           for (const ex of tagFilter.exclude_tags) { if (tagSet.has(ex)) return false; }
-          // Positive filters — product must match at least one active filter
-          const intentMatch = !tagFilter.intent || tagSet.has(tagFilter.intent);
-          const audienceMatch = !tagFilter.audience || tagSet.has(tagFilter.audience);
-          const styleMatch = !tagFilter.style || tagSet.has(tagFilter.style);
-          if (!intentMatch && !audienceMatch && !styleMatch) return false;
+          // Positive filters — product must match ALL active filters (AND logic)
+          if (tagFilter.intent && !tagSet.has(tagFilter.intent)) return false;
+          if (tagFilter.audience && !tagSet.has(tagFilter.audience)) return false;
+          if (tagFilter.style && !tagSet.has(tagFilter.style)) return false;
         }
         return true;
       })
