@@ -86,17 +86,18 @@ export default function App() {
   // Tag-based search state
   const [freeQuery, setFreeQuery] = useState("");
   const [queryLoading, setQueryLoading] = useState(false);
-  const [interpreted, setInterpreted] = useState(null); // {include_tags, exclude_tags, intent, audience, style, occasion, summary}
+  const [interpreted, setInterpreted] = useState(null);
   const [tagFilter, setTagFilter] = useState({ intent: "", audience: "", style: "", include_tags: [], exclude_tags: [] });
   const [excludeInput, setExcludeInput] = useState("");
-  const [productTagMap, setProductTagMap] = useState({}); // product_id -> [{tag, dimension}]
+  const [productTagMap, setProductTagMap] = useState({});
   const [tagLibrary, setTagLibrary] = useState({});
 
   // Admin state
   const [adminView, setAdminView] = useState("list");
   const [editProduct, setEditProduct] = useState(null);
   const [saving, setSaving] = useState(false);
-  const [form, setForm] = useState({ name:"", category:"", price:"", tier:"Silver", image_url:"", occasions:"", description:"", edible:false, fragile:false, customisable:true, popularity:50 });
+  const [form, setForm] = useState({ name:"", category:"", price:"", tier:"Silver", image_url:"", occasions:"", description:"", edible:false, fragile:false, customisable:true, popularity:50, whats_in_box:[], box_dimensions:"", weight_grams:"", moq:"", lead_time:"" });
+  const [boxItemInput, setBoxItemInput] = useState("");
   const [csvRows, setCsvRows] = useState([]);
   const [csvUploading, setCsvUploading] = useState(false);
   const [csvStatus, setCsvStatus] = useState(null);
@@ -111,7 +112,7 @@ export default function App() {
   const [customTags, setCustomTags] = useState({});
   const [newTags, setNewTags] = useState({});
 
-  const emptyForm = { name:"", category:"", price:"", tier:"Silver", image_url:"", occasions:"", description:"", edible:false, fragile:false, customisable:true, popularity:50 };
+  const emptyForm = { name:"", category:"", price:"", tier:"Silver", image_url:"", occasions:"", description:"", edible:false, fragile:false, customisable:true, popularity:50, whats_in_box:[], box_dimensions:"", weight_grams:"", moq:"", lead_time:"" };
   const queryTimer = useRef(null);
 
   const loadTagLibrary = useCallback(async () => {
@@ -144,7 +145,6 @@ export default function App() {
 
   useEffect(() => { loadProducts(); loadTagLibrary(); loadProductTags(); }, [loadProducts, loadTagLibrary, loadProductTags]);
 
-  // Interpret free text query
   const interpretQuery = useCallback(async (query) => {
     if (!query.trim()) { setInterpreted(null); setTagFilter({ intent:"", audience:"", style:"", include_tags:[], exclude_tags:[] }); return; }
     setQueryLoading(true);
@@ -171,7 +171,6 @@ export default function App() {
     setQueryLoading(false);
   }, []);
 
-  // Debounce free text
   const onFreeQueryChange = (val) => {
     setFreeQuery(val);
     if (queryTimer.current) clearTimeout(queryTimer.current);
@@ -195,22 +194,16 @@ export default function App() {
     setTagFilter(prev => ({ ...prev, exclude_tags: prev.exclude_tags.filter(t => t !== tag) }));
   };
 
-  // Score product against tag filters
   const tagScore = useCallback((productId) => {
     const pTags = productTagMap[productId] || [];
     const tagSet = new Set(pTags.map(t => t.tag));
-    // Check exclusions first
     for (const ex of tagFilter.exclude_tags) {
-      if (tagSet.has(ex)) return -1; // excluded
+      if (tagSet.has(ex)) return -1;
     }
     let boost = 0;
-    // Intent match
     if (tagFilter.intent && tagSet.has(tagFilter.intent)) boost += 30;
-    // Audience match
     if (tagFilter.audience && tagSet.has(tagFilter.audience)) boost += 25;
-    // Style match
     if (tagFilter.style && tagSet.has(tagFilter.style)) boost += 20;
-    // Include tags
     for (const inc of tagFilter.include_tags) {
       if (tagSet.has(inc)) boost += 10;
     }
@@ -232,13 +225,10 @@ export default function App() {
         const leadDays = { in_stock:3, short:30, medium:45, long:60 };
         if ((leadDays[p.lead_time] || 3) > days * 1.2) return false;
         if (qty < (p.moq || 1)) return false;
-        // Tag filters — exclude and require
         if (hasTagFilters) {
           const pTags = productTagMap[p.id] || [];
           const tagSet = new Set(pTags.map(t => t.tag));
-          // Hard exclusions
           for (const ex of tagFilter.exclude_tags) { if (tagSet.has(ex)) return false; }
-          // Positive filters — product must match ALL active filters (AND logic)
           if (tagFilter.intent && !tagSet.has(tagFilter.intent)) return false;
           if (tagFilter.audience && !tagSet.has(tagFilter.audience)) return false;
           if (tagFilter.style && !tagSet.has(tagFilter.style)) return false;
@@ -274,7 +264,21 @@ export default function App() {
       const res = await fetch(`${CATALOGUE_URL}/generate-catalogue`, {
         method:"POST", headers:{"Content-Type":"application/json"},
         body: JSON.stringify({
-          products: sel.map(p => ({ name:p.name, origin:p.category||"India", category:p.category||"General", price:Math.round(p._price), description:p.description||"", occasions:Array.isArray(p.occasions)?p.occasions:(p.occasions||"").split("|").map(s=>s.trim()).filter(Boolean), lead_time:{in_stock:"In Stock",short:"15–30 days",medium:"45 days",long:"60 days"}[p.lead_time]||"In Stock", moq:(p.moq||1)+" unit"+((p.moq||1)>1?"s":""), customisation:p.customisable?"Available on request":"Not available", images:p.image_url?[p.image_url]:[] })),
+          products: sel.map(p => ({
+            name: p.name,
+            origin: p.category||"India",
+            category: p.category||"General",
+            price: Math.round(p._price),
+            description: p.description||"",
+            occasions: Array.isArray(p.occasions)?p.occasions:(p.occasions||"").split("|").map(s=>s.trim()).filter(Boolean),
+            lead_time: p.lead_time||"",
+            moq: p.moq ? (p.moq+" unit"+(p.moq>1?"s":"")) : "1 unit",
+            customisation: p.customisable?"Available on request":"Not available",
+            images: p.image_url?[p.image_url]:[],
+            whats_in_box: p.whats_in_box||[],
+            box_dimensions: p.box_dimensions||"",
+            weight_grams: p.weight_grams||null,
+          })),
           meta: { client_name:clientName||"Valued Client", occasion:params.occasion!=="All"?params.occasion:"Corporate Gifting", event_date:"", valid_until:"" },
         }),
       });
@@ -352,7 +356,25 @@ export default function App() {
     if (!form.name||!form.price) return;
     setSaving(true);
     try {
-      const payload = { name:form.name, category:form.category, price:parseFloat(form.price), tier:form.tier, image_url:form.image_url, occasions:form.occasions, description:form.description, edible:form.edible, fragile:form.fragile, customisable:form.customisable, popularity:parseInt(form.popularity)||50, lead_time:form.tier==="Platinum"?"in_stock":form.tier==="Gold"?"short":"medium", active:true };
+      const payload = {
+        name: form.name,
+        category: form.category,
+        price: parseFloat(form.price),
+        tier: form.tier,
+        image_url: form.image_url,
+        occasions: form.occasions,
+        description: form.description,
+        edible: form.edible,
+        fragile: form.fragile,
+        customisable: form.customisable,
+        popularity: parseInt(form.popularity)||50,
+        lead_time: form.lead_time||null,
+        active: true,
+        whats_in_box: form.whats_in_box||[],
+        box_dimensions: form.box_dimensions||null,
+        weight_grams: form.weight_grams ? parseInt(form.weight_grams) : null,
+        moq: form.moq ? parseInt(form.moq) : null,
+      };
       if (editProduct) {
         await supabase.from("catalog").update(payload).eq("id",editProduct.id);
       } else {
@@ -390,7 +412,7 @@ export default function App() {
       if (!row.name||!row.price){errors.push("Skipped: missing name or price");continue;}
       const bool=v=>v==="true"||v==="1"||v==="yes";
       const tierVal=row.tier||"Silver"; const p=parseFloat(row.price)||0;
-      const payload={name:row.name,category:row.category||"",price:p,tier:tierVal,description:row.description||"",occasions:row.occasions||"",image_url:row.image_url||"",edible:bool(row.edible),fragile:bool(row.fragile),customisable:bool(row.customisable!==""?row.customisable:"true"),popularity:parseInt(row.popularity)||50,lead_time:tierVal==="Platinum"?"in_stock":tierVal==="Gold"?"short":"medium",active:true,tagging_status:"untagged"};
+      const payload={name:row.name,category:row.category||"",price:p,tier:tierVal,description:row.description||"",occasions:row.occasions||"",image_url:row.image_url||"",edible:bool(row.edible),fragile:bool(row.fragile),customisable:bool(row.customisable!==""?row.customisable:"true"),popularity:parseInt(row.popularity)||50,lead_time:row.lead_time||null,active:true,tagging_status:"untagged",whats_in_box:[],box_dimensions:row.box_dimensions||null,weight_grams:row.weight_grams?parseInt(row.weight_grams):null,moq:row.moq?parseInt(row.moq):null};
       const {data:ins,error}=await supabase.from("catalog").insert([payload]).select().single();
       if(error){errors.push(row.name+": "+error.message);continue;}
       if(ins){
@@ -408,7 +430,6 @@ export default function App() {
   const totalTagSelected = Object.values(tagSelected).reduce((s,set)=>s+set.size,0);
   const newTagCount = Object.values(newTags).reduce((s,set)=>s+set.size,0);
 
-  // Unique values for dropdowns from tag library
   const intentOptions = tagLibrary["intent"] || [];
   const audienceOptions = tagLibrary["audience"] || [];
   const styleOptions = tagLibrary["style"] || [];
@@ -431,8 +452,6 @@ export default function App() {
         .layout{display:grid;grid-template-columns:300px 1fr;min-height:calc(100vh - 56px);}
         .sidebar{background:#fff;border-right:0.5px solid ${C.rule};padding:24px 20px;position:sticky;top:0;height:calc(100vh - 56px);overflow-y:auto;}
         .main{padding:28px 32px 60px;}
-
-        /* Search box */
         .search-wrap{margin-bottom:20px;}
         .search-box{position:relative;}
         .search-inp{display:block;width:100%;padding:9px 36px 9px 12px;background:${C.stone};border:1px solid ${C.rule};border-radius:4px;font-size:14px;font-family:'EB Garamond',serif;color:${C.ink};outline:none;transition:border-color 0.15s;}
@@ -442,14 +461,11 @@ export default function App() {
         .search-hint{font-size:11px;color:${C.muted};margin-top:5px;font-style:italic;}
         .interp-pill{display:inline-flex;align-items:center;gap:6px;background:#E1F5EE;border:0.5px solid #1D9E75;color:#085041;padding:4px 10px;border-radius:99px;font-size:11px;margin-top:8px;max-width:100%;}
         .interp-text{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-
-        /* Exclude chips */
         .excl-chips{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:8px;}
         .excl-chip{display:inline-flex;align-items:center;gap:4px;padding:3px 8px;background:#FCEBEB;border:0.5px solid #F7C1C1;border-radius:99px;font-size:11px;color:#A32D2D;}
         .excl-chip button{background:none;border:none;color:#A32D2D;cursor:pointer;font-size:13px;line-height:1;padding:0;}
         .excl-inp{display:block;width:100%;padding:6px 0 7px;background:transparent;border:none;border-bottom:1px solid ${C.rule};font-size:14px;font-family:'Cormorant Garamond',serif;font-style:italic;color:${C.ink};outline:none;}
         .excl-inp:focus{border-bottom-color:${C.red};}
-
         .s-title{font-family:'Playfair Display',serif;font-size:22px;font-weight:900;color:${C.ink};letter-spacing:2px;text-transform:uppercase;margin-bottom:4px;}
         .s-sub{font-size:12px;color:${C.muted};margin-bottom:20px;}
         .s-section{font-size:11px;letter-spacing:2.5px;text-transform:uppercase;color:${C.ink};font-weight:700;padding-bottom:7px;border-bottom:1.5px solid ${C.ink};margin-bottom:14px;margin-top:22px;}
@@ -595,7 +611,6 @@ export default function App() {
             <div className="s-title">Find gifts</div>
             <div className="s-sub">Describe what you need or use the filters below.</div>
 
-            {/* ── Free text search ── */}
             <div style={{marginBottom:20}}>
               <div style={{display:"flex",gap:6,alignItems:"center"}}>
                 <input
@@ -733,7 +748,8 @@ export default function App() {
                             <div className="p-price-sub">per unit{params.qty&&parseInt(params.qty)>=100?" · volume price":" · retail"}</div>
                             {params.qty&&<div style={{fontSize:12,color:C.muted,marginTop:3}}>{params.qty} units = ₹{(p._price*parseInt(params.qty)).toLocaleString("en-IN")}</div>}
                             <div className="p-meta">
-                              {p.lead_time&&<span className="p-badge" style={{color:p.lead_time==="in_stock"?C.green:p.lead_time==="short"?C.amber:C.roseMid,borderColor:p.lead_time==="in_stock"?C.green:p.lead_time==="short"?C.amber:C.roseMid}}>{{in_stock:"In Stock",short:"15–30 days",medium:"45 days",long:"60 days"}[p.lead_time]}</span>}
+                              {p.lead_time&&<span className="p-badge">{p.lead_time}</span>}
+                              {p.moq&&<span className="p-badge">MOQ {p.moq}</span>}
                               {p.customisable&&<span className="p-badge">Customisable</span>}
                               {p.edible&&<span className="p-badge">Edible</span>}
                               {p.fragile&&<span className="p-badge">Fragile</span>}
@@ -760,7 +776,6 @@ export default function App() {
                 )}
                 {showPreview&&selectedProducts.length>0&&(
                   <div style={{position:"fixed",inset:0,background:"#fff",zIndex:150,overflowY:"auto"}}>
-                    {/* Header */}
                     <div style={{background:C.sidebar,padding:"20px 48px",display:"flex",justifyContent:"space-between",alignItems:"center",position:"sticky",top:0,zIndex:10}}>
                       <div>
                         <div style={{fontSize:9,letterSpacing:"3px",color:"#555",textTransform:"uppercase",marginBottom:4}}>Ikka Dukka · Curated Gift Catalogue</div>
@@ -777,22 +792,17 @@ export default function App() {
                         <button onClick={()=>setShowPreview(false)} style={{background:"transparent",border:"1px solid #444",color:"#fff",padding:"9px 18px",fontSize:10,letterSpacing:2,textTransform:"uppercase",cursor:"pointer",fontFamily:"inherit",flexShrink:0}}>Close ×</button>
                       </div>
                     </div>
-
-                    {/* Product grid */}
                     <div style={{padding:"48px",maxWidth:1200,margin:"0 auto"}}>
                       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:2,background:C.rule}}>
                         {selectedProducts.map(p=>(
                           <div key={p.id} style={{background:"#fff",overflow:"hidden"}}>
-                            {/* Image */}
                             <div style={{width:"100%",paddingBottom:"80%",position:"relative",overflow:"hidden",background:C.warm}}>
                               {p.image_url?.startsWith("http")
                                 ?<img src={p.image_url} alt={p.name} style={{position:"absolute",inset:0,width:"100%",height:"100%",objectFit:"cover"}}/>
                                 :<div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:64}}>{p.fb_icon||"🎁"}</div>
                               }
-                              {/* Tier badge */}
                               <div style={{position:"absolute",top:12,right:12,background:"rgba(14,12,11,0.7)",color:"#fff",fontSize:9,letterSpacing:1.5,textTransform:"uppercase",padding:"3px 10px"}}>{p.tier}</div>
                             </div>
-                            {/* Info */}
                             <div style={{padding:"18px 20px 22px"}}>
                               <div style={{fontSize:9,letterSpacing:2,textTransform:"uppercase",color:C.muted,marginBottom:6}}>{p.category}</div>
                               <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:20,color:C.ink,lineHeight:1.3,marginBottom:10}}>{p.name}</div>
@@ -804,8 +814,6 @@ export default function App() {
                           </div>
                         ))}
                       </div>
-
-                      {/* Footer summary */}
                       <div style={{marginTop:48,paddingTop:24,borderTop:`1.5px solid ${C.ink}`,display:"flex",justifyContent:"space-between",alignItems:"flex-end"}}>
                         <div>
                           <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:20,color:C.ink,marginBottom:4}}>Ikka Dukka Studio Private Limited</div>
@@ -856,8 +864,8 @@ export default function App() {
                             <td className="admin-td"><span className="status-badge" style={{background:st.bg,color:st.color}}>{st.label}</span></td>
                             <td className="admin-td" style={{display:"flex",gap:6}}>
                               <button className="admin-act" style={{borderColor:C.green,color:C.green}} onClick={()=>openTagReview(p)}>Tag →</button>
-                              <button className="admin-act" style={{borderColor:C.cobalt,color:C.cobalt}} onClick={()=>{setEditProduct(p);setForm({name:p.name,category:p.category||"",price:String(p.price),tier:p.tier||"Silver",image_url:p.image_url||"",occasions:p.occasions||"",description:p.description||"",edible:p.edible||false,fragile:p.fragile||false,customisable:p.customisable!==false,popularity:p.popularity||50});setAdminView("edit");}}>Edit →</button>
-              <button className="admin-act" style={{borderColor:C.red,color:C.red}} onClick={async()=>{if(window.confirm(`Delete ${p.name}? This cannot be undone.`)){await supabase.from("product_tags").delete().eq("product_id",p.id);await supabase.from("pricing_tiers").delete().eq("product_id",p.id);await supabase.from("catalog").delete().eq("id",p.id);loadProducts();}}}>Delete</button>
+                              <button className="admin-act" style={{borderColor:C.cobalt,color:C.cobalt}} onClick={()=>{setEditProduct(p);setForm({name:p.name,category:p.category||"",price:String(p.price),tier:p.tier||"Silver",image_url:p.image_url||"",occasions:p.occasions||"",description:p.description||"",edible:p.edible||false,fragile:p.fragile||false,customisable:p.customisable!==false,popularity:p.popularity||50,whats_in_box:p.whats_in_box||[],box_dimensions:p.box_dimensions||"",weight_grams:p.weight_grams?String(p.weight_grams):"",moq:p.moq?String(p.moq):"",lead_time:p.lead_time||""});setAdminView("edit");}}>Edit →</button>
+                              <button className="admin-act" style={{borderColor:C.red,color:C.red}} onClick={async()=>{if(window.confirm(`Delete ${p.name}? This cannot be undone.`)){await supabase.from("product_tags").delete().eq("product_id",p.id);await supabase.from("pricing_tiers").delete().eq("product_id",p.id);await supabase.from("catalog").delete().eq("id",p.id);loadProducts();}}}>Delete</button>
                             </td>
                           </tr>
                         );
@@ -922,6 +930,41 @@ export default function App() {
                     ))}
                   </div>
                 </div>
+                <div className="pf-card">
+                  <div className="pf-card-head"><div className="pf-card-num">5</div><div className="pf-card-title">Logistics & Corporate Info</div></div>
+                  <div className="pf-card-body">
+                    <div className="pf-row pf-row-1">
+                      <div className="pf-field">
+                        <label className="pf-label">What's in the box</label>
+                        {(form.whats_in_box||[]).length>0&&(
+                          <div style={{marginBottom:8,display:"flex",flexDirection:"column",gap:4}}>
+                            {form.whats_in_box.map((item,i)=>(
+                              <div key={i} style={{display:"flex",alignItems:"center",gap:8,fontSize:13,color:C.ink}}>
+                                <span style={{color:C.muted}}>—</span>
+                                <span style={{flex:1}}>{item}</span>
+                                <button onClick={()=>setForm(p=>({...p,whats_in_box:p.whats_in_box.filter((_,j)=>j!==i)}))} style={{background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:14,lineHeight:1,padding:0}}>×</button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                          <input className="pf-inp" type="text" placeholder="e.g. Brass figurine" style={{flex:1}} value={boxItemInput} onChange={e=>setBoxItemInput(e.target.value)}
+                            onKeyDown={e=>{if(e.key==="Enter"&&boxItemInput.trim()){e.preventDefault();setForm(p=>({...p,whats_in_box:[...(p.whats_in_box||[]),boxItemInput.trim()]}));setBoxItemInput("");}}}/>
+                          <button onClick={()=>{if(boxItemInput.trim()){setForm(p=>({...p,whats_in_box:[...(p.whats_in_box||[]),boxItemInput.trim()]}));setBoxItemInput("");}}} style={{padding:"6px 14px",background:C.ink,border:"none",color:"#fff",fontSize:11,letterSpacing:1,textTransform:"uppercase",cursor:"pointer",flexShrink:0,fontFamily:"inherit"}}>Add</button>
+                        </div>
+                        <div className="pf-hint">Press Enter or click Add after each item.</div>
+                      </div>
+                    </div>
+                    <div className="pf-row pf-row-2">
+                      <div className="pf-field"><label className="pf-label">Box dimensions</label><input className="pf-inp" type="text" placeholder="e.g. 20 × 15 × 10 cm" value={form.box_dimensions} onChange={e=>setForm(p=>({...p,box_dimensions:e.target.value}))}/></div>
+                      <div className="pf-field"><label className="pf-label">Weight (grams)</label><input className="pf-inp" type="number" placeholder="e.g. 450" value={form.weight_grams} onChange={e=>setForm(p=>({...p,weight_grams:e.target.value}))}/></div>
+                    </div>
+                    <div className="pf-row pf-row-2">
+                      <div className="pf-field"><label className="pf-label">MOQ (min. order qty)</label><input className="pf-inp" type="number" placeholder="e.g. 25" value={form.moq} onChange={e=>setForm(p=>({...p,moq:e.target.value}))}/></div>
+                      <div className="pf-field"><label className="pf-label">Lead time</label><input className="pf-inp" type="text" placeholder="e.g. 7–10 working days" value={form.lead_time} onChange={e=>setForm(p=>({...p,lead_time:e.target.value}))}/></div>
+                    </div>
+                  </div>
+                </div>
                 <div className="pf-actions">
                   <button className="pf-cancel" onClick={()=>{setAdminView("list");setEditProduct(null);setForm(emptyForm);}}>Cancel</button>
                   <button className="pf-save" onClick={saveProduct} disabled={saving||!form.name||!form.price}>{saving?"Saving…":editProduct?"Save Changes →":"Add Product →"}</button>
@@ -934,7 +977,7 @@ export default function App() {
                 <div style={{maxWidth:640}}>
                   <div style={{background:"#fff",border:`0.5px solid ${C.rule}`,padding:"20px 24px",marginBottom:16}}>
                     <div style={{fontFamily:"'Playfair Display',serif",fontSize:14,fontWeight:700,color:C.ink,marginBottom:6}}>CSV Format</div>
-                    <div style={{fontFamily:"'EB Garamond',serif",fontSize:13,color:C.muted,lineHeight:1.7,marginBottom:12}}>Required: <strong>name, price</strong><br/>Optional: category, tier, description, occasions (pipe-separated), image_url, edible, fragile, customisable, popularity</div>
+                    <div style={{fontFamily:"'EB Garamond',serif",fontSize:13,color:C.muted,lineHeight:1.7,marginBottom:12}}>Required: <strong>name, price</strong><br/>Optional: category, tier, description, occasions (pipe-separated), image_url, edible, fragile, customisable, popularity, lead_time, moq, box_dimensions, weight_grams</div>
                     <a href="/product_upload_template.csv" download style={{fontFamily:"'EB Garamond',serif",fontSize:12,letterSpacing:1.5,textTransform:"uppercase",color:C.cobalt}}>Download template →</a>
                   </div>
                   <div style={{marginBottom:20}}>
