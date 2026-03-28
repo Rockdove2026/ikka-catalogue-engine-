@@ -42,6 +42,18 @@ const DIMENSIONS = [
   { key: "sustainability",  label: "Sustainability",    required: false },
 ];
 
+function getFulfillmentState(product, qty = 1) {
+  const stock = product.stock_quantity ?? 100;
+  const mtoMoq = product.mto_moq || product.moq || 1;
+  if (stock >= 10 && stock >= qty) {
+    return { state: "in_stock", label: "In stock", leadTime: product.lead_time || "2-3 working days", effectiveMoq: 1, customisable: false, belowMoq: false };
+  }
+  if (stock >= 1 && stock < 10) {
+    return { state: "low_stock", label: "Low stock", leadTime: product.lead_time || "2-3 working days", effectiveMoq: 1, customisable: false, belowMoq: qty > stock };
+  }
+  return { state: "mto", label: "Made to order", leadTime: product.mto_lead_time || product.lead_time || "4-6 weeks", effectiveMoq: mtoMoq, customisable: true, belowMoq: qty < mtoMoq };
+}
+
 function priceAtQty(tiers, qty) {
   if (!tiers?.length) return 0;
   const match = tiers.filter(t => qty >= t.min_qty && (t.max_qty === null || qty <= t.max_qty)).sort((a,b) => b.min_qty - a.min_qty)[0];
@@ -49,30 +61,27 @@ function priceAtQty(tiers, qty) {
 }
 
 function scoreProduct(p, params) {
-  let score = p.popularity || 0;
   const qty = parseInt(params.qty) || 1;
   const budget = parseFloat(params.budget) || Infinity;
-  const days = parseInt(params.days) || 999;
+  const fulfillment = getFulfillmentState(p, qty);
+  let score = p.popularity || 0;
   const price = priceAtQty(p.pricing_tiers, qty);
   if (price <= budget) score += 30;
   else if (price <= budget * 1.1) score += 10;
   if (params.occasion && params.occasion !== "All") {
     if ((p.occasions || "").toLowerCase().includes(params.occasion.toLowerCase())) score += 25;
   } else score += 15;
-  const leadDays = { in_stock: 3, short: 30, medium: 45, long: 60 };
-  const lt = leadDays[p.lead_time] || 3;
-  if (lt <= days) score += 20;
-  else if (lt <= days * 1.2) score += 5;
-  else score -= 20;
+  if (fulfillment.state === "in_stock") score += 20;
+  else if (fulfillment.state === "low_stock") score += 15;
+  else if (fulfillment.belowMoq) score -= 15;
   if (p.tier === "Platinum") score += 5;
+  if (params.requireCustomisation && !fulfillment.customisable) score -= 50;
   return Math.min(100, Math.max(0, score));
 }
 
 export default function App() {
   const [tab, setTab] = useState("query");
-
-  // Query state
-  const [params, setParams] = useState({ budget: "", qty: "", days: "", occasion: "All", excludeEdible: false, excludeFragile: false });
+  const [params, setParams] = useState({ budget:"", qty:"", days:"", occasion:"All", excludeEdible:false, excludeFragile:false, requireCustomisation:false });
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState(new Set());
@@ -82,27 +91,22 @@ export default function App() {
   const [clientName, setClientName] = useState("");
   const [showPdfMeta, setShowPdfMeta] = useState(false);
   const [sortBy, setSortBy] = useState("score");
-
-  // Tag-based search state
   const [freeQuery, setFreeQuery] = useState("");
   const [queryLoading, setQueryLoading] = useState(false);
   const [interpreted, setInterpreted] = useState(null);
-  const [tagFilter, setTagFilter] = useState({ intent: "", audience: "", style: "", include_tags: [], exclude_tags: [] });
+  const [tagFilter, setTagFilter] = useState({ intent:"", audience:"", style:"", include_tags:[], exclude_tags:[] });
   const [excludeInput, setExcludeInput] = useState("");
   const [productTagMap, setProductTagMap] = useState({});
   const [tagLibrary, setTagLibrary] = useState({});
-
-  // Admin state
   const [adminView, setAdminView] = useState("list");
   const [editProduct, setEditProduct] = useState(null);
   const [saving, setSaving] = useState(false);
-  const [form, setForm] = useState({ name:"", category:"", price:"", tier:"Silver", image_url:"", occasions:"", description:"", edible:false, fragile:false, customisable:true, popularity:50, whats_in_box:[], box_dimensions:"", weight_grams:"", moq:"", lead_time:"" });
+  const emptyForm = { name:"", category:"", price:"", tier:"Silver", image_url:"", occasions:"", description:"", edible:false, fragile:false, customisable:true, popularity:50, whats_in_box:[], box_dimensions:"", weight_grams:"", moq:"", lead_time:"", stock_quantity:"100", mto_moq:"", mto_lead_time:"" };
+  const [form, setForm] = useState(emptyForm);
   const [boxItemInput, setBoxItemInput] = useState("");
   const [csvRows, setCsvRows] = useState([]);
   const [csvUploading, setCsvUploading] = useState(false);
   const [csvStatus, setCsvStatus] = useState(null);
-
-  // Tagging state
   const [tagProduct, setTagProduct] = useState(null);
   const [tagLoading, setTagLoading] = useState(false);
   const [tagSuggestions, setTagSuggestions] = useState({});
@@ -111,29 +115,16 @@ export default function App() {
   const [tagSearches, setTagSearches] = useState({});
   const [customTags, setCustomTags] = useState({});
   const [newTags, setNewTags] = useState({});
-
-  const emptyForm = { name:"", category:"", price:"", tier:"Silver", image_url:"", occasions:"", description:"", edible:false, fragile:false, customisable:true, popularity:50, whats_in_box:[], box_dimensions:"", weight_grams:"", moq:"", lead_time:"" };
   const queryTimer = useRef(null);
 
   const loadTagLibrary = useCallback(async () => {
     const { data } = await supabase.from("tag_library").select("tag, dimension");
-    if (data) {
-      const lib = {};
-      data.forEach(({ tag, dimension }) => { if (!lib[dimension]) lib[dimension] = []; lib[dimension].push(tag); });
-      setTagLibrary(lib);
-    }
+    if (data) { const lib = {}; data.forEach(({ tag, dimension }) => { if (!lib[dimension]) lib[dimension] = []; lib[dimension].push(tag); }); setTagLibrary(lib); }
   }, []);
 
   const loadProductTags = useCallback(async () => {
     const { data } = await supabase.from("product_tags").select("product_id, tag, dimension").eq("human_confirmed", true);
-    if (data) {
-      const map = {};
-      data.forEach(({ product_id, tag, dimension }) => {
-        if (!map[product_id]) map[product_id] = [];
-        map[product_id].push({ tag, dimension });
-      });
-      setProductTagMap(map);
-    }
+    if (data) { const map = {}; data.forEach(({ product_id, tag, dimension }) => { if (!map[product_id]) map[product_id] = []; map[product_id].push({ tag, dimension }); }); setProductTagMap(map); }
   }, []);
 
   const loadProducts = useCallback(async () => {
@@ -149,64 +140,29 @@ export default function App() {
     if (!query.trim()) { setInterpreted(null); setTagFilter({ intent:"", audience:"", style:"", include_tags:[], exclude_tags:[] }); return; }
     setQueryLoading(true);
     try {
-      const res = await fetch(`${CATALOGUE_URL}/interpret-query`, {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query }),
-      });
+      const res = await fetch(`${CATALOGUE_URL}/interpret-query`, { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ query }) });
       if (!res.ok) throw new Error("Failed");
       const data = await res.json();
       setInterpreted(data);
-      setTagFilter({
-        intent:       data.intent || "",
-        audience:     data.audience || "",
-        style:        data.style || "",
-        include_tags: data.include_tags || [],
-        exclude_tags: data.exclude_tags || [],
-      });
-      if (data.occasion && data.occasion !== "all") {
-        const match = OCCASIONS.find(o => o.toLowerCase() === data.occasion.toLowerCase());
-        if (match) setParams(p => ({ ...p, occasion: match }));
-      }
+      setTagFilter({ intent:data.intent||"", audience:data.audience||"", style:data.style||"", include_tags:data.include_tags||[], exclude_tags:data.exclude_tags||[] });
+      if (data.occasion && data.occasion !== "all") { const match = OCCASIONS.find(o => o.toLowerCase() === data.occasion.toLowerCase()); if (match) setParams(p => ({ ...p, occasion: match })); }
     } catch (e) { /* silent */ }
     setQueryLoading(false);
   }, []);
 
-  const onFreeQueryChange = (val) => {
-    setFreeQuery(val);
-    if (queryTimer.current) clearTimeout(queryTimer.current);
-    if (!val.trim()) { setInterpreted(null); setTagFilter({ intent:"", audience:"", style:"", include_tags:[], exclude_tags:[] }); return; }
-    queryTimer.current = setTimeout(() => interpretQuery(val), 800);
-  };
-
-  const clearSearch = () => {
-    setFreeQuery(""); setInterpreted(null);
-    setTagFilter({ intent:"", audience:"", style:"", include_tags:[], exclude_tags:[] });
-  };
-
-  const addExcludeTag = (tag) => {
-    const t = tag.toLowerCase().trim().replace(/\s+/g, "-");
-    if (!t || tagFilter.exclude_tags.includes(t)) return;
-    setTagFilter(prev => ({ ...prev, exclude_tags: [...prev.exclude_tags, t] }));
-    setExcludeInput("");
-  };
-
-  const removeExcludeTag = (tag) => {
-    setTagFilter(prev => ({ ...prev, exclude_tags: prev.exclude_tags.filter(t => t !== tag) }));
-  };
+  const clearSearch = () => { setFreeQuery(""); setInterpreted(null); setTagFilter({ intent:"", audience:"", style:"", include_tags:[], exclude_tags:[] }); };
+  const addExcludeTag = (tag) => { const t = tag.toLowerCase().trim().replace(/\s+/g, "-"); if (!t || tagFilter.exclude_tags.includes(t)) return; setTagFilter(prev => ({ ...prev, exclude_tags: [...prev.exclude_tags, t] })); setExcludeInput(""); };
+  const removeExcludeTag = (tag) => { setTagFilter(prev => ({ ...prev, exclude_tags: prev.exclude_tags.filter(t => t !== tag) })); };
 
   const tagScore = useCallback((productId) => {
     const pTags = productTagMap[productId] || [];
     const tagSet = new Set(pTags.map(t => t.tag));
-    for (const ex of tagFilter.exclude_tags) {
-      if (tagSet.has(ex)) return -1;
-    }
+    for (const ex of tagFilter.exclude_tags) { if (tagSet.has(ex)) return -1; }
     let boost = 0;
     if (tagFilter.intent && tagSet.has(tagFilter.intent)) boost += 30;
     if (tagFilter.audience && tagSet.has(tagFilter.audience)) boost += 25;
     if (tagFilter.style && tagSet.has(tagFilter.style)) boost += 20;
-    for (const inc of tagFilter.include_tags) {
-      if (tagSet.has(inc)) boost += 10;
-    }
+    for (const inc of tagFilter.include_tags) { if (tagSet.has(inc)) boost += 10; }
     return boost;
   }, [productTagMap, tagFilter]);
 
@@ -215,48 +171,43 @@ export default function App() {
   const results = useMemo(() => {
     const qty = parseInt(params.qty) || 1;
     const budget = parseFloat(params.budget) || Infinity;
-    const days = parseInt(params.days) || 999;
-    return products
-      .filter(p => {
-        if (params.excludeEdible && p.edible) return false;
-        if (params.excludeFragile && p.fragile) return false;
-        const price = priceAtQty(p.pricing_tiers, qty);
-        if (budget < Infinity && price > budget * 1.1) return false;
-        const leadDays = { in_stock:3, short:30, medium:45, long:60 };
-        if ((leadDays[p.lead_time] || 3) > days * 1.2) return false;
-        if (qty < (p.moq || 1)) return false;
-        if (hasTagFilters) {
-          const pTags = productTagMap[p.id] || [];
-          const tagSet = new Set(pTags.map(t => t.tag));
-          for (const ex of tagFilter.exclude_tags) { if (tagSet.has(ex)) return false; }
-          if (tagFilter.intent && !tagSet.has(tagFilter.intent)) return false;
-          if (tagFilter.audience && !tagSet.has(tagFilter.audience)) return false;
-          if (tagFilter.style && !tagSet.has(tagFilter.style)) return false;
-        }
-        return true;
-      })
-      .map(p => {
-        const baseScore = scoreProduct(p, params);
-        const tBoost = hasTagFilters ? tagScore(p.id) : 0;
-        return { ...p, _score: Math.min(100, baseScore + tBoost), _price: priceAtQty(p.pricing_tiers, qty), _tagBoost: tBoost };
-      })
-      .sort((a, b) => {
-        if (sortBy === "score")      return b._score - a._score;
-        if (sortBy === "price_asc")  return a._price - b._price;
-        if (sortBy === "price_desc") return b._price - a._price;
-        return 0;
-      });
+    return products.filter(p => {
+      if (params.excludeEdible && p.edible) return false;
+      if (params.excludeFragile && p.fragile) return false;
+      const price = priceAtQty(p.pricing_tiers, qty);
+      if (budget < Infinity && price > budget * 1.1) return false;
+      if (hasTagFilters) {
+        const pTags = productTagMap[p.id] || [];
+        const tagSet = new Set(pTags.map(t => t.tag));
+        for (const ex of tagFilter.exclude_tags) { if (tagSet.has(ex)) return false; }
+        if (tagFilter.intent && !tagSet.has(tagFilter.intent)) return false;
+        if (tagFilter.audience && !tagSet.has(tagFilter.audience)) return false;
+        if (tagFilter.style && !tagSet.has(tagFilter.style)) return false;
+      }
+      const fulfillment = getFulfillmentState(p, qty);
+      if (params.requireCustomisation && !fulfillment.customisable) return false;
+      return true;
+    }).map(p => {
+      const fulfillment = getFulfillmentState(p, qty);
+      const baseScore = scoreProduct(p, params);
+      const tBoost = hasTagFilters ? tagScore(p.id) : 0;
+      return { ...p, _score: Math.min(100, baseScore + tBoost), _price: priceAtQty(p.pricing_tiers, qty), _tagBoost: tBoost, _fulfillment: fulfillment };
+    }).sort((a, b) => {
+      if (sortBy === "score") return b._score - a._score;
+      if (sortBy === "price_asc") return a._price - b._price;
+      if (sortBy === "price_desc") return b._price - a._price;
+      return 0;
+    });
   }, [products, params, sortBy, tagScore, hasTagFilters]);
 
-  useEffect(() => {
-    if (results.length > 0) setSelected(new Set(results.filter(p => p._score >= 40).map(p => p.id)));
-  }, [results]);
+  useEffect(() => { if (results.length > 0) setSelected(new Set(results.filter(p => p._score >= 40).map(p => p.id))); }, [results]);
 
   const logRequest = useCallback(async (url) => {
-    await supabase.from("client_requests").insert([{ budget_per_unit: parseFloat(params.budget)||null, quantity: parseInt(params.qty)||null, timeline_days: parseInt(params.days)||null, occasion: params.occasion!=="All"?params.occasion:null, exclude_edible: params.excludeEdible, exclude_fragile: params.excludeFragile, results_count: results.length, pdf_url: url||null }]);
+    await supabase.from("client_requests").insert([{ budget_per_unit:parseFloat(params.budget)||null, quantity:parseInt(params.qty)||null, occasion:params.occasion!=="All"?params.occasion:null, exclude_edible:params.excludeEdible, exclude_fragile:params.excludeFragile, results_count:results.length, pdf_url:url||null }]);
   }, [params, results]);
 
   const generatePDF = async () => {
+    const qty = parseInt(params.qty) || 1;
     const sel = results.filter(p => selected.has(p.id));
     if (!sel.length) return;
     setPdfLoading(true); setPdfUrl(null);
@@ -264,21 +215,10 @@ export default function App() {
       const res = await fetch(`${CATALOGUE_URL}/generate-catalogue`, {
         method:"POST", headers:{"Content-Type":"application/json"},
         body: JSON.stringify({
-          products: sel.map(p => ({
-            name: p.name,
-            origin: p.category||"India",
-            category: p.category||"General",
-            price: Math.round(p._price),
-            description: p.description||"",
-            occasions: Array.isArray(p.occasions)?p.occasions:(p.occasions||"").split("|").map(s=>s.trim()).filter(Boolean),
-            lead_time: p.lead_time||"",
-            moq: p.moq ? (p.moq+" unit"+(p.moq>1?"s":"")) : "1 unit",
-            customisation: p.customisable?"Available on request":"Not available",
-            images: p.image_url?[p.image_url]:[],
-            whats_in_box: p.whats_in_box||[],
-            box_dimensions: p.box_dimensions||"",
-            weight_grams: p.weight_grams||null,
-          })),
+          products: sel.map(p => {
+            const f = p._fulfillment || getFulfillmentState(p, qty);
+            return { name:p.name, origin:p.category||"India", category:p.category||"General", price:Math.round(p._price), description:p.description||"", occasions:Array.isArray(p.occasions)?p.occasions:(p.occasions||"").split("|").map(s=>s.trim()).filter(Boolean), lead_time:f.leadTime, moq:f.effectiveMoq===1?"1 unit":`${f.effectiveMoq} units`, customisation:f.customisable?"Available on request":"Not available", images:p.image_url?[p.image_url]:[], whats_in_box:p.whats_in_box||[], box_dimensions:p.box_dimensions||"", weight_grams:p.weight_grams||null, stock_status:f.label };
+          }),
           meta: { client_name:clientName||"Valued Client", occasion:params.occasion!=="All"?params.occasion:"Corporate Gifting", event_date:"", valid_until:"" },
         }),
       });
@@ -320,11 +260,7 @@ export default function App() {
     try {
       await supabase.from("product_tags").delete().eq("product_id", tagProduct.id);
       const rows = [];
-      DIMENSIONS.forEach(({key}) => {
-        const sel = tagSelected[key] || new Set();
-        const suggestions = tagSuggestions[key] || [];
-        sel.forEach(tag => { const s = suggestions.find(x=>x.tag===tag); rows.push({ product_id:tagProduct.id, tag, dimension:key, confidence:s?.confidence||100, ai_suggested:!!s, human_confirmed:true }); });
-      });
+      DIMENSIONS.forEach(({key}) => { const sel = tagSelected[key] || new Set(); const suggestions = tagSuggestions[key] || []; sel.forEach(tag => { const s = suggestions.find(x=>x.tag===tag); rows.push({ product_id:tagProduct.id, tag, dimension:key, confidence:s?.confidence||100, ai_suggested:!!s, human_confirmed:true }); }); });
       if (rows.length) await supabase.from("product_tags").insert(rows);
       const newTagRows = [];
       DIMENSIONS.forEach(({key}) => { const nt = newTags[key]||new Set(); nt.forEach(tag => newTagRows.push({tag,dimension:key,created_by:"user"})); });
@@ -337,10 +273,7 @@ export default function App() {
     finally { setTagSaving(false); }
   };
 
-  const toggleTag = (dimension, tag) => {
-    setTagSelected(prev => { const next={...prev}; const s=new Set(next[dimension]||[]); s.has(tag)?s.delete(tag):s.add(tag); next[dimension]=s; return next; });
-  };
-
+  const toggleTag = (dimension, tag) => { setTagSelected(prev => { const next={...prev}; const s=new Set(next[dimension]||[]); s.has(tag)?s.delete(tag):s.add(tag); next[dimension]=s; return next; }); };
   const addCustomTag = (dimension, raw) => {
     const tag = raw.toLowerCase().trim().replace(/\s+/g,"-");
     if (!tag) return;
@@ -349,32 +282,13 @@ export default function App() {
     setTagSelected(prev => { const n={...prev}; const s=new Set(n[dimension]||[]); s.add(tag); n[dimension]=s; return n; });
     setTagSearches(prev => ({...prev,[dimension]:""}));
   };
-
   const cfClass = c => c>=80?"high":c>=60?"med":"low";
 
   const saveProduct = async () => {
     if (!form.name||!form.price) return;
     setSaving(true);
     try {
-      const payload = {
-        name: form.name,
-        category: form.category,
-        price: parseFloat(form.price),
-        tier: form.tier,
-        image_url: form.image_url,
-        occasions: form.occasions,
-        description: form.description,
-        edible: form.edible,
-        fragile: form.fragile,
-        customisable: form.customisable,
-        popularity: parseInt(form.popularity)||50,
-        lead_time: form.lead_time||null,
-        active: true,
-        whats_in_box: form.whats_in_box||[],
-        box_dimensions: form.box_dimensions||null,
-        weight_grams: form.weight_grams ? parseInt(form.weight_grams) : null,
-        moq: form.moq ? parseInt(form.moq) : null,
-      };
+      const payload = { name:form.name, category:form.category, price:parseFloat(form.price), tier:form.tier, image_url:form.image_url, occasions:form.occasions, description:form.description, edible:form.edible, fragile:form.fragile, customisable:form.customisable, popularity:parseInt(form.popularity)||50, lead_time:form.lead_time||null, active:true, whats_in_box:form.whats_in_box||[], box_dimensions:form.box_dimensions||null, weight_grams:form.weight_grams?parseInt(form.weight_grams):null, moq:form.moq?parseInt(form.moq):null, stock_quantity:form.stock_quantity!==''?parseInt(form.stock_quantity):100, mto_moq:form.mto_moq?parseInt(form.mto_moq):null, mto_lead_time:form.mto_lead_time||null };
       if (editProduct) {
         await supabase.from("catalog").update(payload).eq("id",editProduct.id);
       } else {
@@ -397,12 +311,7 @@ export default function App() {
     });
   };
 
-  const handleCSVFile = (e) => {
-    const file=e.target.files[0]; if(!file) return;
-    const reader=new FileReader();
-    reader.onload=(ev)=>{setCsvRows(parseCSV(ev.target.result));setCsvStatus(null);};
-    reader.readAsText(file);
-  };
+  const handleCSVFile = (e) => { const file=e.target.files[0]; if(!file) return; const reader=new FileReader(); reader.onload=(ev)=>{setCsvRows(parseCSV(ev.target.result));setCsvStatus(null);}; reader.readAsText(file); };
 
   const uploadCSV = async () => {
     if (!csvRows.length) return;
@@ -412,7 +321,7 @@ export default function App() {
       if (!row.name||!row.price){errors.push("Skipped: missing name or price");continue;}
       const bool=v=>v==="true"||v==="1"||v==="yes";
       const tierVal=row.tier||"Silver"; const p=parseFloat(row.price)||0;
-      const payload={name:row.name,category:row.category||"",price:p,tier:tierVal,description:row.description||"",occasions:row.occasions||"",image_url:row.image_url||"",edible:bool(row.edible),fragile:bool(row.fragile),customisable:bool(row.customisable!==""?row.customisable:"true"),popularity:parseInt(row.popularity)||50,lead_time:row.lead_time||null,active:true,tagging_status:"untagged",whats_in_box:[],box_dimensions:row.box_dimensions||null,weight_grams:row.weight_grams?parseInt(row.weight_grams):null,moq:row.moq?parseInt(row.moq):null};
+      const payload={name:row.name,category:row.category||"",price:p,tier:tierVal,description:row.description||"",occasions:row.occasions||"",image_url:row.image_url||"",edible:bool(row.edible),fragile:bool(row.fragile),customisable:bool(row.customisable!==""?row.customisable:"true"),popularity:parseInt(row.popularity)||50,lead_time:row.lead_time||null,active:true,tagging_status:"untagged",whats_in_box:[],box_dimensions:row.box_dimensions||null,weight_grams:row.weight_grams?parseInt(row.weight_grams):null,moq:row.moq?parseInt(row.moq):null,stock_quantity:row.stock_quantity?parseInt(row.stock_quantity):100,mto_moq:row.mto_moq?parseInt(row.mto_moq):null,mto_lead_time:row.mto_lead_time||null};
       const {data:ins,error}=await supabase.from("catalog").insert([payload]).select().single();
       if(error){errors.push(row.name+": "+error.message);continue;}
       if(ins){
@@ -429,10 +338,15 @@ export default function App() {
   const totalBudget = selectedProducts.reduce((s,p)=>s+p._price*(parseInt(params.qty)||1),0);
   const totalTagSelected = Object.values(tagSelected).reduce((s,set)=>s+set.size,0);
   const newTagCount = Object.values(newTags).reduce((s,set)=>s+set.size,0);
-
   const intentOptions = tagLibrary["intent"] || [];
   const audienceOptions = tagLibrary["audience"] || [];
   const styleOptions = tagLibrary["style"] || [];
+
+  const stockBadge = (f) => {
+    if (f.state === "in_stock")  return { bg:"#f0f8f0", color:"#3B6D11" };
+    if (f.state === "low_stock") return { bg:"#FAEEDA", color:"#854F0B" };
+    return { bg:"#F1EFE8", color:"#5F5E5A" };
+  };
 
   return (
     <>
@@ -452,20 +366,6 @@ export default function App() {
         .layout{display:grid;grid-template-columns:300px 1fr;min-height:calc(100vh - 56px);}
         .sidebar{background:#fff;border-right:0.5px solid ${C.rule};padding:24px 20px;position:sticky;top:0;height:calc(100vh - 56px);overflow-y:auto;}
         .main{padding:28px 32px 60px;}
-        .search-wrap{margin-bottom:20px;}
-        .search-box{position:relative;}
-        .search-inp{display:block;width:100%;padding:9px 36px 9px 12px;background:${C.stone};border:1px solid ${C.rule};border-radius:4px;font-size:14px;font-family:'EB Garamond',serif;color:${C.ink};outline:none;transition:border-color 0.15s;}
-        .search-inp:focus{border-color:${C.cobalt};background:#fff;}
-        .search-inp.loading{border-color:${C.amber};}
-        .search-clear{position:absolute;right:10px;top:50%;transform:translateY(-50%);background:none;border:none;color:${C.muted};cursor:pointer;font-size:16px;line-height:1;}
-        .search-hint{font-size:11px;color:${C.muted};margin-top:5px;font-style:italic;}
-        .interp-pill{display:inline-flex;align-items:center;gap:6px;background:#E1F5EE;border:0.5px solid #1D9E75;color:#085041;padding:4px 10px;border-radius:99px;font-size:11px;margin-top:8px;max-width:100%;}
-        .interp-text{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-        .excl-chips{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:8px;}
-        .excl-chip{display:inline-flex;align-items:center;gap:4px;padding:3px 8px;background:#FCEBEB;border:0.5px solid #F7C1C1;border-radius:99px;font-size:11px;color:#A32D2D;}
-        .excl-chip button{background:none;border:none;color:#A32D2D;cursor:pointer;font-size:13px;line-height:1;padding:0;}
-        .excl-inp{display:block;width:100%;padding:6px 0 7px;background:transparent;border:none;border-bottom:1px solid ${C.rule};font-size:14px;font-family:'Cormorant Garamond',serif;font-style:italic;color:${C.ink};outline:none;}
-        .excl-inp:focus{border-bottom-color:${C.red};}
         .s-title{font-family:'Playfair Display',serif;font-size:22px;font-weight:900;color:${C.ink};letter-spacing:2px;text-transform:uppercase;margin-bottom:4px;}
         .s-sub{font-size:12px;color:${C.muted};margin-bottom:20px;}
         .s-section{font-size:11px;letter-spacing:2.5px;text-transform:uppercase;color:${C.ink};font-weight:700;padding-bottom:7px;border-bottom:1.5px solid ${C.ink};margin-bottom:14px;margin-top:22px;}
@@ -479,6 +379,11 @@ export default function App() {
         .s-toggle-lbl{font-size:13px;color:${C.ink};}
         .s-toggle-sub{font-size:11px;color:${C.muted};}
         .s-chk{width:16px;height:16px;accent-color:${C.cobalt};cursor:pointer;flex-shrink:0;}
+        .excl-chips{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:8px;}
+        .excl-chip{display:inline-flex;align-items:center;gap:4px;padding:3px 8px;background:#FCEBEB;border:0.5px solid #F7C1C1;border-radius:99px;font-size:11px;color:#A32D2D;}
+        .excl-chip button{background:none;border:none;color:#A32D2D;cursor:pointer;font-size:13px;line-height:1;padding:0;}
+        .excl-inp{display:block;width:100%;padding:6px 0 7px;background:transparent;border:none;border-bottom:1px solid ${C.rule};font-size:14px;font-family:'Cormorant Garamond',serif;font-style:italic;color:${C.ink};outline:none;}
+        .excl-inp:focus{border-bottom-color:${C.red};}
         .eyebrow{font-size:10px;letter-spacing:3px;text-transform:uppercase;color:${C.muted};padding-bottom:8px;border-bottom:1.5px solid ${C.ink};margin-bottom:18px;display:flex;justify-content:space-between;align-items:center;}
         .product-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:1px;background:${C.rule};}
         .p-card{background:#fff;cursor:pointer;position:relative;transition:background 0.15s;}
@@ -496,8 +401,9 @@ export default function App() {
         .p-desc{font-size:12px;color:${C.muted};line-height:1.55;margin-bottom:12px;}
         .p-price{font-family:'Playfair Display',serif;font-size:22px;font-weight:900;color:${C.ink};margin-bottom:4px;}
         .p-price-sub{font-size:11px;color:${C.muted};}
-        .p-meta{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;}
+        .p-meta{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px;align-items:center;}
         .p-badge{font-size:9px;letter-spacing:1px;text-transform:uppercase;padding:2px 8px;border:0.5px solid ${C.rule};color:${C.muted};}
+        .p-badge-warn{font-size:9px;letter-spacing:1px;text-transform:uppercase;padding:2px 8px;background:#FAEEDA;border:0.5px solid #c8a96e;color:#854F0B;border-radius:2px;}
         .p-score{position:absolute;top:12px;left:12px;background:rgba(14,12,11,0.75);color:#fff;font-size:10px;letter-spacing:1px;padding:3px 8px;}
         .p-tag-boost{position:absolute;top:36px;left:12px;background:#1D9E75;color:#fff;font-size:9px;letter-spacing:1px;padding:2px 7px;}
         .sort-bar{display:flex;gap:4px;}
@@ -540,8 +446,9 @@ export default function App() {
         .pf-card-title{font-size:10px;letter-spacing:2.5px;text-transform:uppercase;font-weight:700;color:${C.ink};}
         .pf-card-body{padding:20px;}
         .pf-row{display:grid;gap:20px;margin-bottom:18px;}
-        .pf-row-2{grid-template-columns:1fr 1fr;}
         .pf-row-1{grid-template-columns:1fr;}
+        .pf-row-2{grid-template-columns:1fr 1fr;}
+        .pf-row-3{grid-template-columns:1fr 1fr 1fr;}
         .pf-field{display:flex;flex-direction:column;gap:5px;}
         .pf-label{font-size:9px;letter-spacing:2px;text-transform:uppercase;color:${C.muted};}
         .pf-inp{padding:7px 0 8px;background:transparent;border:none;border-bottom:1px solid ${C.rule};font-family:'Cormorant Garamond',serif;font-size:16px;color:${C.ink};outline:none;width:100%;}
@@ -610,21 +517,12 @@ export default function App() {
           <div className="sidebar">
             <div className="s-title">Find gifts</div>
             <div className="s-sub">Describe what you need or use the filters below.</div>
-
             <div style={{marginBottom:20}}>
               <div style={{display:"flex",gap:6,alignItems:"center"}}>
-                <input
-                  type="text"
-                  placeholder="e.g. festive gifts for CXOs..."
-                  value={freeQuery}
-                  onChange={e=>setFreeQuery(e.target.value)}
-                  onKeyDown={e=>{if(e.key==="Enter")interpretQuery(freeQuery);}}
-                  style={{flex:1,padding:"9px 10px",background:"#F5F0EA",border:"1px solid #C8B8B0",borderRadius:4,fontSize:14,fontFamily:"'EB Garamond',serif",color:"#1A1614",outline:"none",minWidth:0,display:"block"}}
-                />
+                <input type="text" placeholder="e.g. festive gifts for CXOs..." value={freeQuery} onChange={e=>setFreeQuery(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")interpretQuery(freeQuery);}} style={{flex:1,padding:"9px 10px",background:"#F5F0EA",border:"1px solid #C8B8B0",borderRadius:4,fontSize:14,fontFamily:"'EB Garamond',serif",color:"#1A1614",outline:"none",minWidth:0,display:"block"}}/>
                 {freeQuery&&<button onClick={clearSearch} style={{background:"none",border:"none",color:"#8A7A72",cursor:"pointer",fontSize:18,padding:"0 4px",lineHeight:1,flexShrink:0}}>×</button>}
               </div>
-              <button onClick={()=>interpretQuery(freeQuery)} disabled={!freeQuery.trim()||queryLoading}
-                style={{display:"block",width:"100%",marginTop:6,padding:"8px",background:queryLoading?"#8A7A72":"#1A1614",color:"#fff",border:"none",fontSize:10,letterSpacing:2,textTransform:"uppercase",cursor:!freeQuery.trim()||queryLoading?"not-allowed":"pointer",opacity:!freeQuery.trim()?0.4:1,fontFamily:"inherit"}}>
+              <button onClick={()=>interpretQuery(freeQuery)} disabled={!freeQuery.trim()||queryLoading} style={{display:"block",width:"100%",marginTop:6,padding:"8px",background:queryLoading?"#8A7A72":"#1A1614",color:"#fff",border:"none",fontSize:10,letterSpacing:2,textTransform:"uppercase",cursor:!freeQuery.trim()||queryLoading?"not-allowed":"pointer",opacity:!freeQuery.trim()?0.4:1,fontFamily:"inherit"}}>
                 {queryLoading?"Interpreting…":"Search →"}
               </button>
               {interpreted&&!queryLoading&&(
@@ -636,10 +534,7 @@ export default function App() {
             </div>
 
             <div className="s-section">Budget & Quantity</div>
-            <div className="s-field">
-              <label className="s-label">Budget per unit (₹)</label>
-              <input className="s-inp" type="number" placeholder="e.g. 3000" value={params.budget} onChange={e=>setParams(p=>({...p,budget:e.target.value}))}/>
-            </div>
+            <div className="s-field"><label className="s-label">Budget per unit (₹)</label><input className="s-inp" type="number" placeholder="e.g. 3000" value={params.budget} onChange={e=>setParams(p=>({...p,budget:e.target.value}))}/></div>
             <div className="s-field">
               <label className="s-label">Quantity (units)</label>
               <input className="s-inp" type="number" placeholder="e.g. 100" value={params.qty} onChange={e=>setParams(p=>({...p,qty:e.target.value}))}/>
@@ -647,16 +542,8 @@ export default function App() {
             </div>
 
             <div className="s-section">Timeline & Occasion</div>
-            <div className="s-field">
-              <label className="s-label">Days until event</label>
-              <input className="s-inp" type="number" placeholder="e.g. 21" value={params.days} onChange={e=>setParams(p=>({...p,days:e.target.value}))}/>
-            </div>
-            <div className="s-field">
-              <label className="s-label">Occasion</label>
-              <select className="s-sel" value={params.occasion} onChange={e=>setParams(p=>({...p,occasion:e.target.value}))}>
-                {OCCASIONS.map(o=><option key={o}>{o}</option>)}
-              </select>
-            </div>
+            <div className="s-field"><label className="s-label">Days until event</label><input className="s-inp" type="number" placeholder="e.g. 21" value={params.days} onChange={e=>setParams(p=>({...p,days:e.target.value}))}/></div>
+            <div className="s-field"><label className="s-label">Occasion</label><select className="s-sel" value={params.occasion} onChange={e=>setParams(p=>({...p,occasion:e.target.value}))}>{OCCASIONS.map(o=><option key={o}>{o}</option>)}</select></div>
 
             <div className="s-section">Restrictions</div>
             {[{key:"excludeEdible",label:"Exclude edible items",sub:"No food or beverage products"},{key:"excludeFragile",label:"Exclude fragile items",sub:"Safe for courier / bulk shipping"}].map(r=>(
@@ -665,41 +552,19 @@ export default function App() {
                 <input type="checkbox" className="s-chk" checked={params[r.key]} onChange={e=>setParams(p=>({...p,[r.key]:e.target.checked}))}/>
               </div>
             ))}
+            <div className="s-toggle">
+              <div><div className="s-toggle-lbl">Customisation required</div><div className="s-toggle-sub">Only show made-to-order products</div></div>
+              <input type="checkbox" className="s-chk" checked={params.requireCustomisation} onChange={e=>setParams(p=>({...p,requireCustomisation:e.target.checked}))}/>
+            </div>
 
             <div className="s-section">Smart Filters</div>
-            <div className="s-field">
-              <label className="s-label">Intent</label>
-              <select className="s-sel" value={tagFilter.intent} onChange={e=>setTagFilter(prev=>({...prev,intent:e.target.value}))}>
-                <option value="">Any intent</option>
-                {intentOptions.map(t=><option key={t} value={t}>{t}</option>)}
-              </select>
-            </div>
-            <div className="s-field">
-              <label className="s-label">Audience</label>
-              <select className="s-sel" value={tagFilter.audience} onChange={e=>setTagFilter(prev=>({...prev,audience:e.target.value}))}>
-                <option value="">Any audience</option>
-                {audienceOptions.map(t=><option key={t} value={t}>{t}</option>)}
-              </select>
-            </div>
-            <div className="s-field">
-              <label className="s-label">Style</label>
-              <select className="s-sel" value={tagFilter.style} onChange={e=>setTagFilter(prev=>({...prev,style:e.target.value}))}>
-                <option value="">Any style</option>
-                {styleOptions.map(t=><option key={t} value={t}>{t}</option>)}
-              </select>
-            </div>
+            <div className="s-field"><label className="s-label">Intent</label><select className="s-sel" value={tagFilter.intent} onChange={e=>setTagFilter(prev=>({...prev,intent:e.target.value}))}><option value="">Any intent</option>{intentOptions.map(t=><option key={t} value={t}>{t}</option>)}</select></div>
+            <div className="s-field"><label className="s-label">Audience</label><select className="s-sel" value={tagFilter.audience} onChange={e=>setTagFilter(prev=>({...prev,audience:e.target.value}))}><option value="">Any audience</option>{audienceOptions.map(t=><option key={t} value={t}>{t}</option>)}</select></div>
+            <div className="s-field"><label className="s-label">Style</label><select className="s-sel" value={tagFilter.style} onChange={e=>setTagFilter(prev=>({...prev,style:e.target.value}))}><option value="">Any style</option>{styleOptions.map(t=><option key={t} value={t}>{t}</option>)}</select></div>
             <div className="s-field">
               <label className="s-label">Exclude tags</label>
-              {tagFilter.exclude_tags.length>0&&(
-                <div className="excl-chips">
-                  {tagFilter.exclude_tags.map(t=>(
-                    <span key={t} className="excl-chip">{t}<button onClick={()=>removeExcludeTag(t)}>×</button></span>
-                  ))}
-                </div>
-              )}
-              <input className="excl-inp" type="text" placeholder="e.g. leather, alcohol…" value={excludeInput}
-                onChange={e=>setExcludeInput(e.target.value)}
-                onKeyDown={e=>{if(e.key==="Enter"||e.key===","||e.key===" "){e.preventDefault();addExcludeTag(excludeInput);}}}/>
+              {tagFilter.exclude_tags.length>0&&(<div className="excl-chips">{tagFilter.exclude_tags.map(t=>(<span key={t} className="excl-chip">{t}<button onClick={()=>removeExcludeTag(t)}>×</button></span>))}</div>)}
+              <input className="excl-inp" type="text" placeholder="e.g. leather, alcohol…" value={excludeInput} onChange={e=>setExcludeInput(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"||e.key===","||e.key===" "){e.preventDefault();addExcludeTag(excludeInput);}}}/>
               <div style={{fontSize:10,color:"#8A7A72",marginTop:3}}>Press Enter or comma to add</div>
             </div>
 
@@ -715,6 +580,7 @@ export default function App() {
               <div style={{fontFamily:"'Playfair Display',serif",fontSize:28,fontWeight:900,color:"#1A1614"}}>{results.length}</div>
               <div style={{fontSize:12,color:"#8A7A72"}}>products matched · {selected.size} selected</div>
               {hasTagFilters&&<div style={{fontSize:11,color:"#5a8a5a",marginTop:4}}>Tag filters active</div>}
+              {params.requireCustomisation&&<div style={{fontSize:11,color:C.amber,marginTop:4}}>Customisation filter on — MTO only</div>}
             </div>
           </div>
 
@@ -723,17 +589,15 @@ export default function App() {
               <>
                 <div className="eyebrow">
                   <span>{results.length} products{hasTagFilters?" · filtered by tags":""}</span>
-                  <div className="sort-bar">
-                    {[["score","Best Match"],["price_asc","Price ↑"],["price_desc","Price ↓"]].map(([v,l])=>(
-                      <button key={v} onClick={()=>setSortBy(v)} className="sort-btn" style={{borderColor:sortBy===v?C.ink:C.rule,color:sortBy===v?C.ink:C.muted}}>{l}</button>
-                    ))}
-                  </div>
+                  <div className="sort-bar">{[["score","Best Match"],["price_asc","Price ↑"],["price_desc","Price ↓"]].map(([v,l])=>(<button key={v} onClick={()=>setSortBy(v)} className="sort-btn" style={{borderColor:sortBy===v?C.ink:C.rule,color:sortBy===v?C.ink:C.muted}}>{l}</button>))}</div>
                 </div>
                 {results.length===0?<div className="loading">No products match — try adjusting your filters</div>:(
                   <div className="product-grid">
                     {results.map(p=>{
-                      const isSel=selected.has(p.id);
-                      const tierC=TIER_COLOR[p.tier]||C.muted;
+                      const isSel = selected.has(p.id);
+                      const tierC = TIER_COLOR[p.tier]||C.muted;
+                      const f     = p._fulfillment || getFulfillmentState(p, parseInt(params.qty)||1);
+                      const sb    = stockBadge(f);
                       return (
                         <div key={p.id} className={`p-card${isSel?" sel":""}`} onClick={()=>setSelected(prev=>{const n=new Set(prev);n.has(p.id)?n.delete(p.id):n.add(p.id);return n;})}>
                           <div className="p-score">{p._score}% match</div>
@@ -743,14 +607,14 @@ export default function App() {
                           <div className="p-body">
                             <div className="p-cat-row"><div className="p-cat">{p.category}</div><span className="p-tier" style={{color:tierC,borderColor:tierC}}>{p.tier}</span></div>
                             <div className="p-name">{p.name}</div>
-                            {p.description&&<div className="p-desc">{p.description}</div>}
+                            {p.description&&<div className="p-desc">{p.description.slice(0,90)}{p.description.length>90?"…":""}</div>}
                             <div className="p-price">₹{p._price.toLocaleString("en-IN")}</div>
                             <div className="p-price-sub">per unit{params.qty&&parseInt(params.qty)>=100?" · volume price":" · retail"}</div>
                             {params.qty&&<div style={{fontSize:12,color:C.muted,marginTop:3}}>{params.qty} units = ₹{(p._price*parseInt(params.qty)).toLocaleString("en-IN")}</div>}
                             <div className="p-meta">
-                              {p.lead_time&&<span className="p-badge">{p.lead_time}</span>}
-                              {p.moq&&<span className="p-badge">MOQ {p.moq}</span>}
-                              {p.customisable&&<span className="p-badge">Customisable</span>}
+                              <span className="status-badge" style={{background:sb.bg,color:sb.color}}>{f.label}</span>
+                              {f.belowMoq&&<span className="p-badge-warn">Min. {f.effectiveMoq} units</span>}
+                              {f.customisable&&<span className="p-badge">Customisable</span>}
                               {p.edible&&<span className="p-badge">Edible</span>}
                               {p.fragile&&<span className="p-badge">Fragile</span>}
                             </div>
@@ -771,60 +635,6 @@ export default function App() {
                       <button className="sel-btn-sec" onClick={()=>setShowPreview(v=>!v)}>{showPreview?"Hide preview":"Preview catalogue"}</button>
                       <button className="sel-btn-primary" onClick={()=>setShowPdfMeta(true)}>Generate PDF →</button>
                       {pdfUrl&&<a href={pdfUrl} target="_blank" rel="noreferrer" style={{color:C.blue,fontSize:12}}>View PDF ↗</a>}
-                    </div>
-                  </div>
-                )}
-                {showPreview&&selectedProducts.length>0&&(
-                  <div style={{position:"fixed",inset:0,background:"#fff",zIndex:150,overflowY:"auto"}}>
-                    <div style={{background:C.sidebar,padding:"20px 48px",display:"flex",justifyContent:"space-between",alignItems:"center",position:"sticky",top:0,zIndex:10}}>
-                      <div>
-                        <div style={{fontSize:9,letterSpacing:"3px",color:"#555",textTransform:"uppercase",marginBottom:4}}>Ikka Dukka · Curated Gift Catalogue</div>
-                        <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:26,color:"#fff",fontWeight:300,letterSpacing:1}}>
-                          {params.occasion!=="All"?params.occasion:"Corporate Gifting"} Collection
-                        </div>
-                      </div>
-                      <div style={{display:"flex",alignItems:"center",gap:20}}>
-                        <div style={{textAlign:"right"}}>
-                          <div style={{fontSize:9,letterSpacing:2,textTransform:"uppercase",color:"#888",marginBottom:2}}>{selectedProducts.length} products selected</div>
-                          <div style={{fontFamily:"'Playfair Display',serif",fontSize:22,color:"#fff"}}>₹{totalBudget.toLocaleString("en-IN")}</div>
-                          <div style={{fontSize:10,color:"#666"}}>{params.qty||1} units · excl. GST</div>
-                        </div>
-                        <button onClick={()=>setShowPreview(false)} style={{background:"transparent",border:"1px solid #444",color:"#fff",padding:"9px 18px",fontSize:10,letterSpacing:2,textTransform:"uppercase",cursor:"pointer",fontFamily:"inherit",flexShrink:0}}>Close ×</button>
-                      </div>
-                    </div>
-                    <div style={{padding:"48px",maxWidth:1200,margin:"0 auto"}}>
-                      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:2,background:C.rule}}>
-                        {selectedProducts.map(p=>(
-                          <div key={p.id} style={{background:"#fff",overflow:"hidden"}}>
-                            <div style={{width:"100%",paddingBottom:"80%",position:"relative",overflow:"hidden",background:C.warm}}>
-                              {p.image_url?.startsWith("http")
-                                ?<img src={p.image_url} alt={p.name} style={{position:"absolute",inset:0,width:"100%",height:"100%",objectFit:"cover"}}/>
-                                :<div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:64}}>{p.fb_icon||"🎁"}</div>
-                              }
-                              <div style={{position:"absolute",top:12,right:12,background:"rgba(14,12,11,0.7)",color:"#fff",fontSize:9,letterSpacing:1.5,textTransform:"uppercase",padding:"3px 10px"}}>{p.tier}</div>
-                            </div>
-                            <div style={{padding:"18px 20px 22px"}}>
-                              <div style={{fontSize:9,letterSpacing:2,textTransform:"uppercase",color:C.muted,marginBottom:6}}>{p.category}</div>
-                              <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:20,color:C.ink,lineHeight:1.3,marginBottom:10}}>{p.name}</div>
-                              <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",borderTop:`0.5px solid ${C.rule}`,paddingTop:10}}>
-                                <div style={{fontFamily:"'Playfair Display',serif",fontSize:22,fontWeight:900,color:C.ink}}>₹{p._price.toLocaleString("en-IN")}</div>
-                                <div style={{fontSize:11,color:C.muted}}>per unit</div>
-                              </div>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                      <div style={{marginTop:48,paddingTop:24,borderTop:`1.5px solid ${C.ink}`,display:"flex",justifyContent:"space-between",alignItems:"flex-end"}}>
-                        <div>
-                          <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:20,color:C.ink,marginBottom:4}}>Ikka Dukka Studio Private Limited</div>
-                          <div style={{fontSize:11,color:C.muted}}>www.ikkadukka.com · hello@ikkadukka.com</div>
-                        </div>
-                        <div style={{textAlign:"right"}}>
-                          <div style={{fontSize:9,letterSpacing:2,textTransform:"uppercase",color:C.muted,marginBottom:4}}>Total Estimate</div>
-                          <div style={{fontFamily:"'Playfair Display',serif",fontSize:32,fontWeight:900,color:C.ink}}>₹{totalBudget.toLocaleString("en-IN")}</div>
-                          <div style={{fontSize:11,color:C.muted}}>{params.qty||1} units × {selectedProducts.length} products · excl. GST</div>
-                        </div>
-                      </div>
                     </div>
                   </div>
                 )}
@@ -851,21 +661,27 @@ export default function App() {
                 </div>
                 <div style={{background:"#fff",border:`0.5px solid ${C.rule}`,overflowX:"auto"}}>
                   <table className="admin-tbl">
-                    <thead><tr>{["Name","Category","Price","Tier","Tags","Actions"].map((h,i)=><th className="admin-th" key={i}>{h}</th>)}</tr></thead>
+                    <thead><tr>{["Name","Category","Price","Stock","Tier","Tags","Actions"].map((h,i)=><th className="admin-th" key={i}>{h}</th>)}</tr></thead>
                     <tbody>
                       {products.map(p=>{
-                        const st=STATUS_STYLE[p.tagging_status]||STATUS_STYLE.untagged;
+                        const st = STATUS_STYLE[p.tagging_status]||STATUS_STYLE.untagged;
+                        const f  = getFulfillmentState(p, 1);
+                        const sb = stockBadge(f);
                         return (
                           <tr key={p.id}>
                             <td className="admin-td">{p.name}</td>
                             <td className="admin-td admin-td-sm">{p.category}</td>
                             <td className="admin-td admin-td-sm">₹{parseFloat(p.price).toLocaleString("en-IN")}</td>
+                            <td className="admin-td">
+                              <span className="status-badge" style={{background:sb.bg,color:sb.color}}>{f.label}</span>
+                              <div style={{fontSize:10,color:C.muted,marginTop:2}}>{p.stock_quantity??100} units</div>
+                            </td>
                             <td className="admin-td"><span style={{fontSize:10,letterSpacing:1,textTransform:"uppercase",padding:"2px 8px",border:`0.5px solid ${TIER_COLOR[p.tier]||C.muted}`,color:TIER_COLOR[p.tier]||C.muted}}>{p.tier}</span></td>
                             <td className="admin-td"><span className="status-badge" style={{background:st.bg,color:st.color}}>{st.label}</span></td>
                             <td className="admin-td" style={{display:"flex",gap:6}}>
                               <button className="admin-act" style={{borderColor:C.green,color:C.green}} onClick={()=>openTagReview(p)}>Tag →</button>
-                              <button className="admin-act" style={{borderColor:C.cobalt,color:C.cobalt}} onClick={()=>{setEditProduct(p);setForm({name:p.name,category:p.category||"",price:String(p.price),tier:p.tier||"Silver",image_url:p.image_url||"",occasions:p.occasions||"",description:p.description||"",edible:p.edible||false,fragile:p.fragile||false,customisable:p.customisable!==false,popularity:p.popularity||50,whats_in_box:p.whats_in_box||[],box_dimensions:p.box_dimensions||"",weight_grams:p.weight_grams?String(p.weight_grams):"",moq:p.moq?String(p.moq):"",lead_time:p.lead_time||""});setAdminView("edit");}}>Edit →</button>
-                              <button className="admin-act" style={{borderColor:C.red,color:C.red}} onClick={async()=>{if(window.confirm(`Delete ${p.name}? This cannot be undone.`)){await supabase.from("product_tags").delete().eq("product_id",p.id);await supabase.from("pricing_tiers").delete().eq("product_id",p.id);await supabase.from("catalog").delete().eq("id",p.id);loadProducts();}}}>Delete</button>
+                              <button className="admin-act" style={{borderColor:C.cobalt,color:C.cobalt}} onClick={()=>{setEditProduct(p);setForm({name:p.name,category:p.category||"",price:String(p.price),tier:p.tier||"Silver",image_url:p.image_url||"",occasions:p.occasions||"",description:p.description||"",edible:p.edible||false,fragile:p.fragile||false,customisable:p.customisable!==false,popularity:p.popularity||50,whats_in_box:p.whats_in_box||[],box_dimensions:p.box_dimensions||"",weight_grams:p.weight_grams?String(p.weight_grams):"",moq:p.moq?String(p.moq):"",lead_time:p.lead_time||"",stock_quantity:p.stock_quantity!=null?String(p.stock_quantity):"100",mto_moq:p.mto_moq?String(p.mto_moq):"",mto_lead_time:p.mto_lead_time||""});setAdminView("edit");}}>Edit →</button>
+                              <button className="admin-act" style={{borderColor:C.red,color:C.red}} onClick={async()=>{if(window.confirm(`Delete ${p.name}?`)){await supabase.from("product_tags").delete().eq("product_id",p.id);await supabase.from("pricing_tiers").delete().eq("product_id",p.id);await supabase.from("catalog").delete().eq("id",p.id);loadProducts();}}}>Delete</button>
                             </td>
                           </tr>
                         );
@@ -893,41 +709,23 @@ export default function App() {
                   <div className="pf-card-head"><div className="pf-card-num">2</div><div className="pf-card-title">Pricing</div></div>
                   <div className="pf-card-body">
                     <div className="pf-row pf-row-2">
-                      <div className="pf-field"><label className="pf-label">Base Price (₹) <span className="pf-required">*</span></label><input className="pf-inp" type="number" placeholder="e.g. 2500" value={form.price} onChange={e=>setForm(p=>({...p,price:e.target.value}))}/><div className="pf-hint">Retail price. Volume tiers auto-generated.</div></div>
-                      <div className="pf-field"><label className="pf-label">Popularity (0–100)</label><input className="pf-inp" type="number" min="0" max="100" value={form.popularity} onChange={e=>setForm(p=>({...p,popularity:e.target.value}))}/><div className="pf-hint">Higher = shown first.</div></div>
+                      <div className="pf-field"><label className="pf-label">Base Price (₹) <span className="pf-required">*</span></label><input className="pf-inp" type="number" placeholder="e.g. 2500" value={form.price} onChange={e=>setForm(p=>({...p,price:e.target.value}))}/><div className="pf-hint">Volume tiers auto-generated.</div></div>
+                      <div className="pf-field"><label className="pf-label">Popularity (0–100)</label><input className="pf-inp" type="number" min="0" max="100" value={form.popularity} onChange={e=>setForm(p=>({...p,popularity:e.target.value}))}/></div>
                     </div>
-                    {form.price&&(
-                      <div style={{display:"flex",gap:1,marginTop:4}}>
-                        {[["1–99",1],["100–199",0.85],["200–499",0.80],["500–999",0.70],["1000+",0.60]].map(([label,mult])=>(
-                          <div key={label} style={{flex:1,background:C.stone,padding:"8px 10px",borderRight:`0.5px solid ${C.rule}`}}>
-                            <div style={{fontSize:9,color:C.muted,letterSpacing:1,textTransform:"uppercase",marginBottom:3}}>{label}</div>
-                            <div style={{fontFamily:"'Playfair Display',serif",fontSize:13,fontWeight:700,color:C.ink}}>₹{Math.round(parseFloat(form.price)*mult).toLocaleString("en-IN")}</div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
+                    {form.price&&(<div style={{display:"flex",gap:1,marginTop:4}}>{[["1–99",1],["100–199",0.85],["200–499",0.80],["500–999",0.70],["1000+",0.60]].map(([label,mult])=>(<div key={label} style={{flex:1,background:C.stone,padding:"8px 10px",borderRight:`0.5px solid ${C.rule}`}}><div style={{fontSize:9,color:C.muted,letterSpacing:1,textTransform:"uppercase",marginBottom:3}}>{label}</div><div style={{fontFamily:"'Playfair Display',serif",fontSize:13,fontWeight:700,color:C.ink}}>₹{Math.round(parseFloat(form.price)*mult).toLocaleString("en-IN")}</div></div>))}</div>)}
                   </div>
                 </div>
                 <div className="pf-card">
                   <div className="pf-card-head"><div className="pf-card-num">3</div><div className="pf-card-title">Availability & Occasions</div></div>
                   <div className="pf-card-body">
                     <div className="pf-row pf-row-1"><div className="pf-field"><label className="pf-label">Occasions</label><input className="pf-inp" type="text" placeholder="e.g. Diwali|Birthday|Thank You" value={form.occasions} onChange={e=>setForm(p=>({...p,occasions:e.target.value}))}/><div className="pf-hint">Separate with | (pipe).</div></div></div>
-                    <div className="pf-row pf-row-1"><div className="pf-field">
-                      <label className="pf-label">Image URL</label>
-                      <input className="pf-inp" type="text" placeholder="https://…" value={form.image_url} onChange={e=>setForm(p=>({...p,image_url:e.target.value}))}/>
-                      {form.image_url?.startsWith("http")&&<img src={form.image_url} alt="" style={{marginTop:8,height:56,width:56,objectFit:"cover",border:`0.5px solid ${C.rule}`}}/>}
-                    </div></div>
+                    <div className="pf-row pf-row-1"><div className="pf-field"><label className="pf-label">Image URL</label><input className="pf-inp" type="text" placeholder="https://…" value={form.image_url} onChange={e=>setForm(p=>({...p,image_url:e.target.value}))}/>{form.image_url?.startsWith("http")&&<img src={form.image_url} alt="" style={{marginTop:8,height:56,width:56,objectFit:"cover",border:`0.5px solid ${C.rule}`}}/>}</div></div>
                   </div>
                 </div>
                 <div className="pf-card">
                   <div className="pf-card-head"><div className="pf-card-num">4</div><div className="pf-card-title">Attributes</div></div>
                   <div className="pf-card-body" style={{paddingTop:8,paddingBottom:8}}>
-                    {[{key:"edible",label:"Edible / food product",sub:"Excluded when client restricts edible gifts"},{key:"fragile",label:"Fragile item",sub:"Excluded when client restricts fragile gifts"},{key:"customisable",label:"Available for customisation",sub:"Branding, engraving, message cards etc."}].map(a=>(
-                      <div className="pf-toggle-row" key={a.key}>
-                        <div><div className="pf-toggle-lbl">{a.label}</div><div className="pf-toggle-sub">{a.sub}</div></div>
-                        <input type="checkbox" className="s-chk" checked={form[a.key]} onChange={e=>setForm(p=>({...p,[a.key]:e.target.checked}))}/>
-                      </div>
-                    ))}
+                    {[{key:"edible",label:"Edible / food product",sub:"Excluded when client restricts edible gifts"},{key:"fragile",label:"Fragile item",sub:"Excluded when client restricts fragile gifts"},{key:"customisable",label:"Available for customisation",sub:"Branding, engraving, message cards etc."}].map(a=>(<div className="pf-toggle-row" key={a.key}><div><div className="pf-toggle-lbl">{a.label}</div><div className="pf-toggle-sub">{a.sub}</div></div><input type="checkbox" className="s-chk" checked={form[a.key]} onChange={e=>setForm(p=>({...p,[a.key]:e.target.checked}))}/></div>))}
                   </div>
                 </div>
                 <div className="pf-card">
@@ -936,20 +734,9 @@ export default function App() {
                     <div className="pf-row pf-row-1">
                       <div className="pf-field">
                         <label className="pf-label">What's in the box</label>
-                        {(form.whats_in_box||[]).length>0&&(
-                          <div style={{marginBottom:8,display:"flex",flexDirection:"column",gap:4}}>
-                            {form.whats_in_box.map((item,i)=>(
-                              <div key={i} style={{display:"flex",alignItems:"center",gap:8,fontSize:13,color:C.ink}}>
-                                <span style={{color:C.muted}}>—</span>
-                                <span style={{flex:1}}>{item}</span>
-                                <button onClick={()=>setForm(p=>({...p,whats_in_box:p.whats_in_box.filter((_,j)=>j!==i)}))} style={{background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:14,lineHeight:1,padding:0}}>×</button>
-                              </div>
-                            ))}
-                          </div>
-                        )}
+                        {(form.whats_in_box||[]).length>0&&(<div style={{marginBottom:8,display:"flex",flexDirection:"column",gap:4}}>{form.whats_in_box.map((item,i)=>(<div key={i} style={{display:"flex",alignItems:"center",gap:8,fontSize:13,color:C.ink}}><span style={{color:C.muted}}>—</span><span style={{flex:1}}>{item}</span><button onClick={()=>setForm(p=>({...p,whats_in_box:p.whats_in_box.filter((_,j)=>j!==i)}))} style={{background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:14,lineHeight:1,padding:0}}>×</button></div>))}</div>)}
                         <div style={{display:"flex",gap:8,alignItems:"center"}}>
-                          <input className="pf-inp" type="text" placeholder="e.g. Brass figurine" style={{flex:1}} value={boxItemInput} onChange={e=>setBoxItemInput(e.target.value)}
-                            onKeyDown={e=>{if(e.key==="Enter"&&boxItemInput.trim()){e.preventDefault();setForm(p=>({...p,whats_in_box:[...(p.whats_in_box||[]),boxItemInput.trim()]}));setBoxItemInput("");}}}/>
+                          <input className="pf-inp" type="text" placeholder="e.g. Brass figurine" style={{flex:1}} value={boxItemInput} onChange={e=>setBoxItemInput(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&boxItemInput.trim()){e.preventDefault();setForm(p=>({...p,whats_in_box:[...(p.whats_in_box||[]),boxItemInput.trim()]}));setBoxItemInput("");}}}/>
                           <button onClick={()=>{if(boxItemInput.trim()){setForm(p=>({...p,whats_in_box:[...(p.whats_in_box||[]),boxItemInput.trim()]}));setBoxItemInput("");}}} style={{padding:"6px 14px",background:C.ink,border:"none",color:"#fff",fontSize:11,letterSpacing:1,textTransform:"uppercase",cursor:"pointer",flexShrink:0,fontFamily:"inherit"}}>Add</button>
                         </div>
                         <div className="pf-hint">Press Enter or click Add after each item.</div>
@@ -960,9 +747,31 @@ export default function App() {
                       <div className="pf-field"><label className="pf-label">Weight (grams)</label><input className="pf-inp" type="number" placeholder="e.g. 450" value={form.weight_grams} onChange={e=>setForm(p=>({...p,weight_grams:e.target.value}))}/></div>
                     </div>
                     <div className="pf-row pf-row-2">
-                      <div className="pf-field"><label className="pf-label">MOQ (min. order qty)</label><input className="pf-inp" type="number" placeholder="e.g. 25" value={form.moq} onChange={e=>setForm(p=>({...p,moq:e.target.value}))}/></div>
-                      <div className="pf-field"><label className="pf-label">Lead time</label><input className="pf-inp" type="text" placeholder="e.g. 7–10 working days" value={form.lead_time} onChange={e=>setForm(p=>({...p,lead_time:e.target.value}))}/></div>
+                      <div className="pf-field"><label className="pf-label">Display MOQ</label><input className="pf-inp" type="number" placeholder="e.g. 25" value={form.moq} onChange={e=>setForm(p=>({...p,moq:e.target.value}))}/><div className="pf-hint">Shown on product card.</div></div>
+                      <div className="pf-field"><label className="pf-label">In-stock lead time</label><input className="pf-inp" type="text" placeholder="e.g. 7–10 working days" value={form.lead_time} onChange={e=>setForm(p=>({...p,lead_time:e.target.value}))}/></div>
                     </div>
+                  </div>
+                </div>
+                <div className="pf-card">
+                  <div className="pf-card-head"><div className="pf-card-num">6</div><div className="pf-card-title">Stock & Fulfilment</div></div>
+                  <div className="pf-card-body">
+                    <div className="pf-row pf-row-3">
+                      <div className="pf-field">
+                        <label className="pf-label">Stock on hand</label>
+                        <input className="pf-inp" type="number" min="0" placeholder="e.g. 100" value={form.stock_quantity} onChange={e=>setForm(p=>({...p,stock_quantity:e.target.value}))}/>
+                        <div className="pf-hint" style={{color:parseInt(form.stock_quantity)>=10?C.green:parseInt(form.stock_quantity)>0?C.amber:C.red}}>
+                          {parseInt(form.stock_quantity)>=10?"In stock":parseInt(form.stock_quantity)>0?"Low stock":"Made to order"}
+                        </div>
+                      </div>
+                      <div className="pf-field"><label className="pf-label">MTO min. order qty</label><input className="pf-inp" type="number" min="0" placeholder="e.g. 50" value={form.mto_moq} onChange={e=>setForm(p=>({...p,mto_moq:e.target.value}))}/><div className="pf-hint">Min. for a production run.</div></div>
+                      <div className="pf-field"><label className="pf-label">MTO lead time</label><input className="pf-inp" type="text" placeholder="e.g. 4–6 weeks" value={form.mto_lead_time} onChange={e=>setForm(p=>({...p,mto_lead_time:e.target.value}))}/><div className="pf-hint">When stock = 0.</div></div>
+                    </div>
+                    {form.stock_quantity!==''&&(
+                      <div style={{marginTop:4,padding:"10px 14px",background:C.stone,borderLeft:`2px solid ${C.rule}`,fontSize:12,color:C.muted}}>
+                        <strong style={{color:C.ink}}>State: </strong>
+                        {parseInt(form.stock_quantity)>=10?`In stock — MOQ 1, lead time: ${form.lead_time||"2–3 working days"}, no customisation`:parseInt(form.stock_quantity)>0?`Low stock (${form.stock_quantity} units)`:`Made to order — MOQ ${form.mto_moq||"?"}, lead time: ${form.mto_lead_time||"?"}, customisation available`}
+                      </div>
+                    )}
                   </div>
                 </div>
                 <div className="pf-actions">
@@ -977,25 +786,11 @@ export default function App() {
                 <div style={{maxWidth:640}}>
                   <div style={{background:"#fff",border:`0.5px solid ${C.rule}`,padding:"20px 24px",marginBottom:16}}>
                     <div style={{fontFamily:"'Playfair Display',serif",fontSize:14,fontWeight:700,color:C.ink,marginBottom:6}}>CSV Format</div>
-                    <div style={{fontFamily:"'EB Garamond',serif",fontSize:13,color:C.muted,lineHeight:1.7,marginBottom:12}}>Required: <strong>name, price</strong><br/>Optional: category, tier, description, occasions (pipe-separated), image_url, edible, fragile, customisable, popularity, lead_time, moq, box_dimensions, weight_grams</div>
-                    <a href="/product_upload_template.csv" download style={{fontFamily:"'EB Garamond',serif",fontSize:12,letterSpacing:1.5,textTransform:"uppercase",color:C.cobalt}}>Download template →</a>
+                    <div style={{fontFamily:"'EB Garamond',serif",fontSize:13,color:C.muted,lineHeight:1.7}}>Required: <strong>name, price</strong><br/>Optional: category, tier, description, occasions (pipe-separated), image_url, edible, fragile, customisable, popularity, lead_time, moq, box_dimensions, weight_grams, stock_quantity, mto_moq, mto_lead_time</div>
                   </div>
-                  <div style={{marginBottom:20}}>
-                    <label className="f-label">Select CSV file</label>
-                    <input type="file" accept=".csv" onChange={handleCSVFile} style={{display:"block",width:"100%",padding:"8px 0",fontFamily:"'EB Garamond',serif",fontSize:14,color:C.ink,borderBottom:`1px solid ${C.rule}`,background:"transparent",outline:"none",cursor:"pointer"}}/>
-                  </div>
-                  {csvRows.length>0&&(
-                    <div style={{marginBottom:20}}>
-                      <div style={{fontFamily:"'EB Garamond',serif",fontSize:13,color:C.muted,marginBottom:10}}>{csvRows.length} rows ready · AI will auto-tag after upload</div>
-                      <button onClick={uploadCSV} disabled={csvUploading} className="f-save">{csvUploading?`Uploading…`:`Upload ${csvRows.length} Products →`}</button>
-                    </div>
-                  )}
-                  {csvStatus&&(
-                    <div style={{padding:16,background:csvStatus.errors.length===0?"#f0f8f0":"#fff8f0",border:`0.5px solid ${csvStatus.errors.length===0?C.green:C.amber}`}}>
-                      <div style={{fontFamily:"'Playfair Display',serif",fontSize:15,fontWeight:700,color:csvStatus.errors.length===0?C.green:C.amber,marginBottom:6}}>{csvStatus.ok} product{csvStatus.ok!==1?"s":""} uploaded — AI tagging in background</div>
-                      {csvStatus.errors.map((e,i)=><div key={i} style={{fontSize:12,color:C.red}}>{e}</div>)}
-                    </div>
-                  )}
+                  <div style={{marginBottom:20}}><label className="f-label">Select CSV file</label><input type="file" accept=".csv" onChange={handleCSVFile} style={{display:"block",width:"100%",padding:"8px 0",fontFamily:"'EB Garamond',serif",fontSize:14,color:C.ink,borderBottom:`1px solid ${C.rule}`,background:"transparent",outline:"none",cursor:"pointer"}}/></div>
+                  {csvRows.length>0&&(<div style={{marginBottom:20}}><div style={{fontFamily:"'EB Garamond',serif",fontSize:13,color:C.muted,marginBottom:10}}>{csvRows.length} rows ready · AI will auto-tag after upload</div><button onClick={uploadCSV} disabled={csvUploading} className="f-save">{csvUploading?`Uploading…`:`Upload ${csvRows.length} Products →`}</button></div>)}
+                  {csvStatus&&(<div style={{padding:16,background:csvStatus.errors.length===0?"#f0f8f0":"#fff8f0",border:`0.5px solid ${csvStatus.errors.length===0?C.green:C.amber}`}}><div style={{fontFamily:"'Playfair Display',serif",fontSize:15,fontWeight:700,color:csvStatus.errors.length===0?C.green:C.amber,marginBottom:6}}>{csvStatus.ok} product{csvStatus.ok!==1?"s":""} uploaded</div>{csvStatus.errors.map((e,i)=><div key={i} style={{fontSize:12,color:C.red}}>{e}</div>)}</div>)}
                 </div>
               </>
             )}
@@ -1023,20 +818,14 @@ export default function App() {
           <div className="tag-panel" onClick={e=>e.stopPropagation()}>
             <div className="tag-panel-head">
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
-                <div>
-                  <div className="tag-panel-name">{tagProduct.name}</div>
-                  <div className="tag-panel-meta">{tagProduct.category} · {tagProduct.tier} · ₹{parseFloat(tagProduct.price).toLocaleString("en-IN")}</div>
-                </div>
+                <div><div className="tag-panel-name">{tagProduct.name}</div><div className="tag-panel-meta">{tagProduct.category} · {tagProduct.tier} · ₹{parseFloat(tagProduct.price).toLocaleString("en-IN")}</div></div>
                 <button onClick={()=>setTagProduct(null)} style={{background:"transparent",border:"none",color:"#888",fontSize:20,cursor:"pointer",lineHeight:1}}>×</button>
               </div>
             </div>
             <div className="tag-panel-body">
               {tagLoading?<div className="tag-loading">Analysing product with AI…</div>:(
                 <>
-                  <div style={{fontSize:13,color:C.muted,marginBottom:14,display:"flex",justifyContent:"space-between"}}>
-                    <span>Review AI suggestions · tap to toggle · search to add</span>
-                    <span style={{color:C.ink,fontWeight:500}}>{totalTagSelected} tags</span>
-                  </div>
+                  <div style={{fontSize:13,color:C.muted,marginBottom:14,display:"flex",justifyContent:"space-between"}}><span>Review AI suggestions · tap to toggle · search to add</span><span style={{color:C.ink,fontWeight:500}}>{totalTagSelected} tags</span></div>
                   {DIMENSIONS.map(({key,label,required})=>{
                     const suggestions=tagSuggestions[key]||[];
                     const extra=(customTags[key]||[]).filter(t=>!suggestions.find(s=>s.tag===t));
@@ -1048,26 +837,15 @@ export default function App() {
                     const exactExists=allLib.includes(search.toLowerCase().replace(/\s+/g,"-"));
                     return (
                       <div className="tag-dim-card" key={key}>
-                        <div className="tag-dim-head">
-                          <div className="tag-dim-label">{label}</div>
-                          {required&&<span className="tag-dim-req">required</span>}
-                          <span className="tag-dim-count">{selSet.size} selected</span>
-                        </div>
+                        <div className="tag-dim-head"><div className="tag-dim-label">{label}</div>{required&&<span className="tag-dim-req">required</span>}<span className="tag-dim-count">{selSet.size} selected</span></div>
                         <div className="tag-dim-body">
                           {suggestions.map(({tag,confidence})=>{const isSel=selSet.has(tag);return <span key={tag} className={`tag-chip${isSel?" sel":""}`} onClick={()=>toggleTag(key,tag)}>{tag}<span className={`tag-cf${isSel?"":" "+cfClass(confidence)}`}>{confidence}%</span></span>;})}
                           {extra.map(tag=><span key={tag} className={`tag-chip new-t${selSet.has(tag)?" sel":""}`} onClick={()=>toggleTag(key,tag)}>{tag}<span className="tag-new-badge">new</span></span>)}
                           {extraSel.map(tag=><span key={tag} className="tag-chip sel" onClick={()=>toggleTag(key,tag)}>{tag}</span>)}
                         </div>
                         <div className="tag-search-row" style={{position:"relative"}}>
-                          <input className="tag-search-inp" placeholder="Search or add tag…" value={search}
-                            onChange={e=>setTagSearches(prev=>({...prev,[key]:e.target.value}))}
-                            onBlur={()=>setTimeout(()=>setTagSearches(prev=>({...prev,[key]:""})),180)}/>
-                          {(dropItems.length>0||(search.length>1&&!exactExists))&&(
-                            <div className="tag-drop">
-                              {dropItems.map(t=><div key={t} className="tag-drop-item" onMouseDown={()=>{toggleTag(key,t);setTagSearches(prev=>({...prev,[key]:""}));}}>{t}</div>)}
-                              {search.length>1&&!exactExists&&<div className="tag-drop-create" onMouseDown={()=>addCustomTag(key,search)}>+ Create: <strong>{search.toLowerCase().replace(/\s+/g,"-")}</strong></div>}
-                            </div>
-                          )}
+                          <input className="tag-search-inp" placeholder="Search or add tag…" value={search} onChange={e=>setTagSearches(prev=>({...prev,[key]:e.target.value}))} onBlur={()=>setTimeout(()=>setTagSearches(prev=>({...prev,[key]:""})),180)}/>
+                          {(dropItems.length>0||(search.length>1&&!exactExists))&&(<div className="tag-drop">{dropItems.map(t=><div key={t} className="tag-drop-item" onMouseDown={()=>{toggleTag(key,t);setTagSearches(prev=>({...prev,[key]:""}));}}>{t}</div>)}{search.length>1&&!exactExists&&<div className="tag-drop-create" onMouseDown={()=>addCustomTag(key,search)}>+ Create: <strong>{search.toLowerCase().replace(/\s+/g,"-")}</strong></div>}</div>)}
                         </div>
                       </div>
                     );
@@ -1076,10 +854,7 @@ export default function App() {
               )}
             </div>
             <div className="tag-panel-foot">
-              <div style={{fontSize:13,color:C.muted}}>
-                {newTagCount>0&&<span>{newTagCount} new tag{newTagCount>1?"s":""} added · </span>}
-                {totalTagSelected} tags · {Object.values(tagSelected).filter(s=>s.size>0).length} dimensions
-              </div>
+              <div style={{fontSize:13,color:C.muted}}>{newTagCount>0&&<span>{newTagCount} new tag{newTagCount>1?"s":""} added · </span>}{totalTagSelected} tags · {Object.values(tagSelected).filter(s=>s.size>0).length} dimensions</div>
               <div style={{display:"flex",gap:8}}>
                 <button onClick={()=>setTagProduct(null)} style={{padding:"10px 18px",border:`0.5px solid ${C.rule}`,background:"transparent",color:C.muted,fontSize:11,letterSpacing:2,textTransform:"uppercase",cursor:"pointer"}}>Cancel</button>
                 <button onClick={saveTags} disabled={tagSaving} style={{padding:"10px 24px",background:"#0F6E56",border:"none",color:"#fff",fontSize:11,letterSpacing:2,textTransform:"uppercase",cursor:tagSaving?"not-allowed":"pointer",opacity:tagSaving?0.7:1}}>{tagSaving?"Saving…":"Confirm & save →"}</button>
