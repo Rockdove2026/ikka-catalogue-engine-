@@ -389,7 +389,7 @@ export default function App() {
         .p-card{background:#fff;cursor:pointer;position:relative;transition:background 0.15s;}
         .p-card.sel{background:#F9F5F0;outline:2px solid ${C.ink};outline-offset:-2px;}
         .p-card:hover{background:#FDFAF7;}
-        .p-img{width:100%;padding-bottom:68%;position:relative;overflow:hidden;background:${C.warm};}
+        .p-img{width:100%;padding-bottom:133%;position:relative;overflow:hidden;background:${C.warm};}
         .p-img img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;}
         .p-img-emoji{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:52px;}
         .p-check{position:absolute;top:12px;right:12px;width:22px;height:22px;background:${C.ink};display:flex;align-items:center;justify-content:center;z-index:2;}
