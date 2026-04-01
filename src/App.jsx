@@ -876,6 +876,7 @@ export default function App() {
       {showPreview&&(
         <PreviewOverlay
           selectedProducts={selectedProducts}
+          allProducts={products}
           selected={selected}
           setSelected={setSelected}
           params={params}
@@ -947,7 +948,8 @@ export default function App() {
 }
 
 /* ── Preview Overlay Component ── */
-function PreviewOverlay({ selectedProducts, selected, setSelected, params, totalBudget, clientName, pdfLoading, onClose, onGeneratePDF, C, TIER_COLOR, getFulfillmentState, stockBadge }) {
+function PreviewOverlay({ selectedProducts, selected, setSelected, params, totalBudget, clientName, pdfLoading, onClose, onGeneratePDF, C, TIER_COLOR, getFulfillmentState, stockBadge, allProducts }) {
+  const [addSearch, setAddSearch] = useState("");
   const qty = parseInt(params.qty) || 1;
   const activeProducts = selectedProducts.filter(p => selected.has(p.id));
   const activeTotal = activeProducts.reduce((s,p) => s + p._price * qty, 0);
@@ -956,6 +958,19 @@ function PreviewOverlay({ selectedProducts, selected, setSelected, params, total
     setSelected(prev => { const n = new Set(prev); n.delete(id); return n; });
   };
 
+  const addProduct = (id) => {
+    setSelected(prev => { const n = new Set(prev); n.add(id); return n; });
+  };
+
+  // Products not currently in selection, filtered by search
+  const notSelected = (allProducts || []).filter(p => !selected.has(p.id));
+  const addResults = addSearch.trim().length > 0
+    ? notSelected.filter(p =>
+        p.name.toLowerCase().includes(addSearch.toLowerCase()) ||
+        (p.category||"").toLowerCase().includes(addSearch.toLowerCase())
+      )
+    : notSelected;
+
   return (
     <div className="prev-overlay">
       {/* Sticky header */}
@@ -963,7 +978,7 @@ function PreviewOverlay({ selectedProducts, selected, setSelected, params, total
         <div className="prev-title-block">
           <div className="prev-eyebrow">Ikka Dukka · Curated Gift Catalogue</div>
           <div className="prev-title">{params.occasion !== "All" ? params.occasion : "Corporate Gifting"} Collection</div>
-          <div style={{fontSize:11,color:"#888",marginTop:4,fontStyle:"italic"}}>Click × on any product to remove it before generating PDF</div>
+          <div style={{fontSize:11,color:"#888",marginTop:4,fontStyle:"italic"}}>Click × to remove · scroll down to add more products</div>
         </div>
         <div className="prev-actions">
           <div className="prev-summary">
@@ -978,7 +993,7 @@ function PreviewOverlay({ selectedProducts, selected, setSelected, params, total
         </div>
       </div>
 
-      {/* Product grid */}
+      {/* Selected product grid */}
       <div className="prev-grid">
         {selectedProducts.map(p => {
           const isActive = selected.has(p.id);
@@ -994,7 +1009,7 @@ function PreviewOverlay({ selectedProducts, selected, setSelected, params, total
                 {isActive ? (
                   <button className="prev-remove" onClick={()=>removeProduct(p.id)} title="Remove from catalogue">×</button>
                 ) : (
-                  <button className="prev-restore" onClick={()=>setSelected(prev=>{const n=new Set(prev);n.add(p.id);return n;})} title="Add back">+ Add</button>
+                  <button className="prev-restore" onClick={()=>addProduct(p.id)} title="Add back">+ Add</button>
                 )}
               </div>
               <div className="prev-body">
@@ -1010,8 +1025,64 @@ function PreviewOverlay({ selectedProducts, selected, setSelected, params, total
         })}
       </div>
 
+      {/* Add more products panel */}
+      <div style={{maxWidth:1280,margin:"0 auto",width:"100%",padding:"40px 40px 0"}}>
+        <div style={{fontSize:11,letterSpacing:2.5,textTransform:"uppercase",color:C.ink,fontWeight:700,paddingBottom:10,borderBottom:`1.5px solid ${C.ink}`,marginBottom:20,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <span>Add more products</span>
+          <span style={{fontSize:10,color:C.muted,fontWeight:400,letterSpacing:1}}>{notSelected.length} not in catalogue</span>
+        </div>
+        {/* Search box */}
+        <div style={{marginBottom:16,maxWidth:400}}>
+          <input
+            type="text"
+            placeholder="Search by name or category…"
+            value={addSearch}
+            onChange={e=>setAddSearch(e.target.value)}
+            style={{display:"block",width:"100%",padding:"9px 12px",background:"#F5F0EA",border:`1px solid ${C.rule}`,fontSize:14,fontFamily:"'EB Garamond',serif",color:C.ink,outline:"none",borderRadius:3}}
+          />
+        </div>
+        {/* Results list */}
+        <div style={{background:"#fff",border:`0.5px solid ${C.rule}`,maxHeight:320,overflowY:"auto"}}>
+          {addResults.length === 0 ? (
+            <div style={{padding:"20px 16px",fontSize:13,color:C.muted,fontStyle:"italic"}}>No products found</div>
+          ) : addResults.map((p, i) => {
+            const tierC = TIER_COLOR[p.tier] || C.muted;
+            const price = p._price || parseFloat(p.price) || 0;
+            return (
+              <div key={p.id} style={{display:"flex",alignItems:"center",gap:14,padding:"10px 16px",borderBottom:i<addResults.length-1?`0.5px solid ${C.rule}`:"none",cursor:"pointer",transition:"background 0.1s"}}
+                onMouseEnter={e=>e.currentTarget.style.background="#F9F5F0"}
+                onMouseLeave={e=>e.currentTarget.style.background="#fff"}
+                onClick={()=>addProduct(p.id)}
+              >
+                {/* Thumbnail */}
+                <div style={{width:44,height:44,flexShrink:0,background:C.warm,overflow:"hidden",position:"relative"}}>
+                  {p.image_url?.startsWith("http")
+                    ? <img src={p.image_url} alt={p.name} style={{width:"100%",height:"100%",objectFit:"cover"}}/>
+                    : <div style={{width:"100%",height:"100%",display:"flex",alignItems:"center",justifyContent:"center",fontSize:22}}>{p.fb_icon||"🎁"}</div>
+                  }
+                </div>
+                {/* Info */}
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:15,color:C.ink,lineHeight:1.2,marginBottom:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.name}</div>
+                  <div style={{fontSize:10,letterSpacing:1.5,textTransform:"uppercase",color:C.muted}}>{p.category}</div>
+                </div>
+                {/* Tier */}
+                <span style={{fontSize:9,letterSpacing:1,textTransform:"uppercase",padding:"2px 8px",border:`0.5px solid ${tierC}`,color:tierC,flexShrink:0}}>{p.tier}</span>
+                {/* Price */}
+                <div style={{fontFamily:"'Playfair Display',serif",fontSize:15,fontWeight:700,color:C.ink,flexShrink:0,minWidth:80,textAlign:"right"}}>₹{price.toLocaleString("en-IN")}</div>
+                {/* Add button */}
+                <button style={{flexShrink:0,padding:"5px 14px",background:C.ink,border:"none",color:"#fff",fontSize:10,letterSpacing:1.5,textTransform:"uppercase",cursor:"pointer",fontFamily:"inherit"}}>+ Add</button>
+              </div>
+            );
+          })}
+        </div>
+        {addSearch && addResults.length > 0 && (
+          <div style={{fontSize:11,color:C.muted,marginTop:6}}>{addResults.length} result{addResults.length!==1?"s":""} · click any row to add to catalogue</div>
+        )}
+      </div>
+
       {/* Footer */}
-      <div style={{maxWidth:1280,margin:"0 auto",width:"100%",padding:"32px 40px 48px",display:"flex",justifyContent:"space-between",alignItems:"flex-end",borderTop:`1.5px solid ${C.ink}`,marginTop:2}}>
+      <div style={{maxWidth:1280,margin:"0 auto",width:"100%",padding:"32px 40px 48px",display:"flex",justifyContent:"space-between",alignItems:"flex-end",borderTop:`1.5px solid ${C.ink}`,marginTop:40}}>
         <div>
           <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:18,color:C.ink,marginBottom:4}}>Ikka Dukka Studio Private Limited</div>
           <div style={{fontSize:11,color:C.muted}}>www.ikkadukka.com · hello@ikkadukka.com</div>
