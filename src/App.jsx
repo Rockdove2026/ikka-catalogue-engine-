@@ -219,7 +219,7 @@ export default function App() {
       if (freeQuery.trim()) {
         const kScore = keywordScore(p, freeQuery);
         const tScore = hasTagFilters ? tagScore(p.id) : 0;
-        if (kScore === 0 && tScore <= 0) return false;
+        const words = freeQuery.trim().split(/\s+/); if (words.length <= 3 && kScore === 0) return false; if (words.length > 3 && kScore === 0 && tScore <= 0) return false;
       }
       return true;
     }).map(p => {
