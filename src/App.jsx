@@ -166,6 +166,24 @@ export default function App() {
     return boost;
   }, [productTagMap, tagFilter]);
 
+  // ── NEW: keyword search directly against product fields ──
+  const keywordScore = useCallback((p, query) => {
+    if (!query.trim()) return 0;
+    const words = query.toLowerCase().split(/\s+/).filter(w => w.length > 2);
+    const haystack = [
+      p.name,
+      p.description,
+      p.occasions,
+      p.category,
+      p.whats_in_box?.join(" "),
+    ].filter(Boolean).join(" ").toLowerCase();
+    let score = 0;
+    for (const word of words) {
+      if (haystack.includes(word)) score += 20;
+    }
+    return Math.min(40, score);
+  }, []);
+
   const hasTagFilters = tagFilter.intent || tagFilter.audience || tagFilter.style || tagFilter.include_tags.length > 0 || tagFilter.exclude_tags.length > 0;
 
   const results = useMemo(() => {
@@ -179,10 +197,15 @@ export default function App() {
       if (hasTagFilters) {
         const pTags = productTagMap[p.id] || [];
         const tagSet = new Set(pTags.map(t => t.tag));
+        // Always hard-filter on exclude tags
         for (const ex of tagFilter.exclude_tags) { if (tagSet.has(ex)) return false; }
-        if (tagFilter.intent && !tagSet.has(tagFilter.intent)) return false;
-        if (tagFilter.audience && !tagSet.has(tagFilter.audience)) return false;
-        if (tagFilter.style && !tagSet.has(tagFilter.style)) return false;
+        // Only hard-filter on intent/audience/style if the product has been tagged
+        // Untagged products still show — keyword search scores them instead
+        if (pTags.length > 0) {
+          if (tagFilter.intent && !tagSet.has(tagFilter.intent)) return false;
+          if (tagFilter.audience && !tagSet.has(tagFilter.audience)) return false;
+          if (tagFilter.style && !tagSet.has(tagFilter.style)) return false;
+        }
       }
       const fulfillment = getFulfillmentState(p, qty);
       if (params.requireCustomisation && !fulfillment.customisable) return false;
@@ -191,14 +214,15 @@ export default function App() {
       const fulfillment = getFulfillmentState(p, qty);
       const baseScore = scoreProduct(p, params);
       const tBoost = hasTagFilters ? tagScore(p.id) : 0;
-      return { ...p, _score: Math.min(100, baseScore + tBoost), _price: priceAtQty(p.pricing_tiers, qty), _tagBoost: tBoost, _fulfillment: fulfillment };
+      const kBoost = keywordScore(p, freeQuery);
+      return { ...p, _score: Math.min(100, baseScore + tBoost + kBoost), _price: priceAtQty(p.pricing_tiers, qty), _tagBoost: tBoost, _fulfillment: fulfillment };
     }).sort((a, b) => {
       if (sortBy === "score") return b._score - a._score;
       if (sortBy === "price_asc") return a._price - b._price;
       if (sortBy === "price_desc") return b._price - a._price;
       return 0;
     });
-  }, [products, params, sortBy, tagScore, hasTagFilters]);
+  }, [products, params, sortBy, tagScore, keywordScore, hasTagFilters, freeQuery]);
 
   useEffect(() => { if (results.length > 0) setSelected(new Set(results.filter(p => p._score >= 40).map(p => p.id))); }, [results]);
 
@@ -498,8 +522,6 @@ export default function App() {
         .tag-loading{display:flex;align-items:center;justify-content:center;min-height:200px;font-size:11px;letter-spacing:3px;text-transform:uppercase;color:${C.muted};}
         .f-label{font-size:9px;letter-spacing:2.5px;text-transform:uppercase;color:${C.muted};display:block;margin-bottom:8px;}
         .f-save{padding:11px 28px;background:${C.cobalt};border:none;color:#fff;font-size:11px;letter-spacing:3px;text-transform:uppercase;cursor:pointer;}
-
-        /* ── Preview overlay ── */
         .prev-overlay{position:fixed;inset:0;background:#fff;z-index:150;overflow-y:auto;display:flex;flex-direction:column;}
         .prev-header{background:${C.sidebar};padding:16px 40px;display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;z-index:10;flex-shrink:0;}
         .prev-title-block{}
@@ -511,7 +533,7 @@ export default function App() {
         .prev-total{font-family:'Playfair Display',serif;font-size:20px;color:#fff;}
         .prev-gst{font-size:10px;color:#666;}
         .prev-hint{font-size:11px;color:#888;margin-top:2px;font-style:italic;}
-        .prev-close{background:transparent;border:1px solid #444;color:#fff;padding:"8px 16px";font-size:10px;letter-spacing:2px;text-transform:uppercase;cursor:pointer;font-family:inherit;padding:8px 16px;flex-shrink:0;}
+        .prev-close{background:transparent;border:1px solid #444;color:#fff;font-size:10px;letter-spacing:2px;text-transform:uppercase;cursor:pointer;font-family:inherit;padding:8px 16px;flex-shrink:0;}
         .prev-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:2px;background:${C.rule};padding:40px;max-width:1280px;margin:0 auto;width:100%;}
         .prev-card{background:#fff;position:relative;overflow:hidden;}
         .prev-card-removed{opacity:0.35;filter:grayscale(1);}
@@ -539,7 +561,6 @@ export default function App() {
         .prev-generate:disabled{opacity:0.6;cursor:not-allowed;}
       `}</style>
 
-      {/* ── HEADER ── */}
       <div className="hdr">
         <div className="hdr-brand">
           <div className="hdr-name">Ikka &thinsp;<em>Dukka</em></div>
@@ -552,14 +573,12 @@ export default function App() {
         </div>
       </div>
 
-      {/* ══ QUERY TAB ══ */}
       {tab==="query" && (
         <div className="layout">
           <div className="sidebar">
             <div className="s-title">Find gifts</div>
             <div className="s-sub">Describe what you need or use the filters below.</div>
 
-            {/* Search */}
             <div style={{marginBottom:20}}>
               <div style={{display:"flex",gap:6,alignItems:"center"}}>
                 <input type="text" placeholder="e.g. festive gifts for CXOs..." value={freeQuery} onChange={e=>setFreeQuery(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")interpretQuery(freeQuery);}} style={{flex:1,padding:"9px 10px",background:"#F5F0EA",border:"1px solid #C8B8B0",borderRadius:4,fontSize:14,fontFamily:"'EB Garamond',serif",color:"#1A1614",outline:"none",minWidth:0,display:"block"}}/>
@@ -687,7 +706,6 @@ export default function App() {
         </div>
       )}
 
-      {/* ══ ADMIN TAB ══ */}
       {tab==="admin"&&(
         <div className="admin-layout">
           <div className="admin-side">
@@ -740,7 +758,6 @@ export default function App() {
             {(adminView==="add"||adminView==="edit")&&(
               <div className="pf-wrap">
                 <div className="admin-eyebrow">{editProduct?`Editing — ${editProduct.name}`:"Add New Product"}</div>
-
                 <div className="pf-card">
                   <div className="pf-card-head"><div className="pf-card-num">1</div><div className="pf-card-title">Core Details</div></div>
                   <div className="pf-card-body">
@@ -752,7 +769,6 @@ export default function App() {
                     <div className="pf-row pf-row-1"><div className="pf-field"><label className="pf-label">Description</label><textarea className="pf-ta" rows={2} placeholder="Short product description…" value={form.description} onChange={e=>setForm(p=>({...p,description:e.target.value}))}/></div></div>
                   </div>
                 </div>
-
                 <div className="pf-card">
                   <div className="pf-card-head"><div className="pf-card-num">2</div><div className="pf-card-title">Pricing</div></div>
                   <div className="pf-card-body">
@@ -763,7 +779,6 @@ export default function App() {
                     {form.price&&(<div style={{display:"flex",gap:1,marginTop:4}}>{[["1–99",1],["100–199",0.85],["200–499",0.80],["500–999",0.70],["1000+",0.60]].map(([label,mult])=>(<div key={label} style={{flex:1,background:C.stone,padding:"8px 10px",borderRight:`0.5px solid ${C.rule}`}}><div style={{fontSize:9,color:C.muted,letterSpacing:1,textTransform:"uppercase",marginBottom:3}}>{label}</div><div style={{fontFamily:"'Playfair Display',serif",fontSize:13,fontWeight:700,color:C.ink}}>₹{Math.round(parseFloat(form.price)*mult).toLocaleString("en-IN")}</div></div>))}</div>)}
                   </div>
                 </div>
-
                 <div className="pf-card">
                   <div className="pf-card-head"><div className="pf-card-num">3</div><div className="pf-card-title">Availability & Occasions</div></div>
                   <div className="pf-card-body">
@@ -771,14 +786,12 @@ export default function App() {
                     <div className="pf-row pf-row-1"><div className="pf-field"><label className="pf-label">Image URL</label><input className="pf-inp" type="text" placeholder="https://…" value={form.image_url} onChange={e=>setForm(p=>({...p,image_url:e.target.value}))}/>{form.image_url?.startsWith("http")&&<img src={form.image_url} alt="" style={{marginTop:8,height:56,width:56,objectFit:"cover",border:`0.5px solid ${C.rule}`}}/>}</div></div>
                   </div>
                 </div>
-
                 <div className="pf-card">
                   <div className="pf-card-head"><div className="pf-card-num">4</div><div className="pf-card-title">Attributes</div></div>
                   <div className="pf-card-body" style={{paddingTop:8,paddingBottom:8}}>
                     {[{key:"edible",label:"Edible / food product",sub:"Excluded when client restricts edible gifts"},{key:"fragile",label:"Fragile item",sub:"Excluded when client restricts fragile gifts"},{key:"customisable",label:"Available for customisation",sub:"Branding, engraving, message cards etc."}].map(a=>(<div className="pf-toggle-row" key={a.key}><div><div className="pf-toggle-lbl">{a.label}</div><div className="pf-toggle-sub">{a.sub}</div></div><input type="checkbox" className="s-chk" checked={form[a.key]} onChange={e=>setForm(p=>({...p,[a.key]:e.target.checked}))}/></div>))}
                   </div>
                 </div>
-
                 <div className="pf-card">
                   <div className="pf-card-head"><div className="pf-card-num">5</div><div className="pf-card-title">Logistics & Corporate Info</div></div>
                   <div className="pf-card-body">
@@ -803,7 +816,6 @@ export default function App() {
                     </div>
                   </div>
                 </div>
-
                 <div className="pf-card">
                   <div className="pf-card-head"><div className="pf-card-num">6</div><div className="pf-card-title">Stock & Fulfilment</div></div>
                   <div className="pf-card-body">
@@ -826,7 +838,6 @@ export default function App() {
                     )}
                   </div>
                 </div>
-
                 <div className="pf-actions">
                   <button className="pf-cancel" onClick={()=>{setAdminView("list");setEditProduct(null);setForm(emptyForm);}}>Cancel</button>
                   <button className="pf-save" onClick={saveProduct} disabled={saving||!form.name||!form.price}>{saving?"Saving…":editProduct?"Save Changes →":"Add Product →"}</button>
@@ -856,7 +867,6 @@ export default function App() {
         </div>
       )}
 
-      {/* ── PDF Meta Overlay ── */}
       {showPdfMeta&&(
         <div className="overlay" onClick={()=>setShowPdfMeta(false)}>
           <div className="overlay-box" onClick={e=>e.stopPropagation()}>
@@ -872,7 +882,6 @@ export default function App() {
         </div>
       )}
 
-      {/* ══ FULL SCREEN PREVIEW OVERLAY ══ */}
       {showPreview&&(
         <PreviewOverlay
           selectedProducts={selectedProducts}
@@ -892,7 +901,6 @@ export default function App() {
         />
       )}
 
-      {/* ── Tag Review Panel ── */}
       {tagProduct&&(
         <div className="tag-overlay" onClick={()=>setTagProduct(null)}>
           <div className="tag-panel" onClick={e=>e.stopPropagation()}>
@@ -947,33 +955,22 @@ export default function App() {
   );
 }
 
-/* ── Preview Overlay Component ── */
 function PreviewOverlay({ selectedProducts, selected, setSelected, params, totalBudget, clientName, pdfLoading, onClose, onGeneratePDF, C, TIER_COLOR, getFulfillmentState, stockBadge, allProducts }) {
   const [addSearch, setAddSearch] = useState("");
   const qty = parseInt(params.qty) || 1;
   const activeProducts = selectedProducts.filter(p => selected.has(p.id));
   const activeTotal = activeProducts.reduce((s,p) => s + p._price * qty, 0);
 
-  const removeProduct = (id) => {
-    setSelected(prev => { const n = new Set(prev); n.delete(id); return n; });
-  };
+  const removeProduct = (id) => { setSelected(prev => { const n = new Set(prev); n.delete(id); return n; }); };
+  const addProduct = (id) => { setSelected(prev => { const n = new Set(prev); n.add(id); return n; }); };
 
-  const addProduct = (id) => {
-    setSelected(prev => { const n = new Set(prev); n.add(id); return n; });
-  };
-
-  // Products not currently in selection, filtered by search
   const notSelected = (allProducts || []).filter(p => !selected.has(p.id));
   const addResults = addSearch.trim().length > 0
-    ? notSelected.filter(p =>
-        p.name.toLowerCase().includes(addSearch.toLowerCase()) ||
-        (p.category||"").toLowerCase().includes(addSearch.toLowerCase())
-      )
+    ? notSelected.filter(p => p.name.toLowerCase().includes(addSearch.toLowerCase()) || (p.category||"").toLowerCase().includes(addSearch.toLowerCase()))
     : notSelected;
 
   return (
     <div className="prev-overlay">
-      {/* Sticky header */}
       <div className="prev-header">
         <div className="prev-title-block">
           <div className="prev-eyebrow">Ikka Dukka · Curated Gift Catalogue</div>
@@ -986,14 +983,10 @@ function PreviewOverlay({ selectedProducts, selected, setSelected, params, total
             <div className="prev-total">₹{activeTotal.toLocaleString("en-IN")}</div>
             <div className="prev-gst">{qty} unit{qty > 1 ? "s" : ""} · excl. GST</div>
           </div>
-          <button className="prev-generate" onClick={onGeneratePDF} disabled={pdfLoading || activeProducts.length === 0}>
-            {pdfLoading ? "Generating…" : "Generate PDF →"}
-          </button>
+          <button className="prev-generate" onClick={onGeneratePDF} disabled={pdfLoading || activeProducts.length === 0}>{pdfLoading ? "Generating…" : "Generate PDF →"}</button>
           <button className="prev-close" onClick={onClose}>Close ×</button>
         </div>
       </div>
-
-      {/* Selected product grid */}
       <div className="prev-grid">
         {selectedProducts.map(p => {
           const isActive = selected.has(p.id);
@@ -1001,16 +994,9 @@ function PreviewOverlay({ selectedProducts, selected, setSelected, params, total
           return (
             <div key={p.id} className={`prev-card${isActive ? "" : " prev-card-removed"}`}>
               <div className="prev-img">
-                {p.image_url?.startsWith("http")
-                  ? <img src={p.image_url} alt={p.name}/>
-                  : <div className="prev-img-emoji">{p.fb_icon || "🎁"}</div>
-                }
+                {p.image_url?.startsWith("http") ? <img src={p.image_url} alt={p.name}/> : <div className="prev-img-emoji">{p.fb_icon || "🎁"}</div>}
                 <div className="prev-tier-badge">{p.tier}</div>
-                {isActive ? (
-                  <button className="prev-remove" onClick={()=>removeProduct(p.id)} title="Remove from catalogue">×</button>
-                ) : (
-                  <button className="prev-restore" onClick={()=>addProduct(p.id)} title="Add back">+ Add</button>
-                )}
+                {isActive ? <button className="prev-remove" onClick={()=>removeProduct(p.id)}>×</button> : <button className="prev-restore" onClick={()=>addProduct(p.id)}>+ Add</button>}
               </div>
               <div className="prev-body">
                 <div className="prev-cat">{p.category}</div>
@@ -1024,24 +1010,14 @@ function PreviewOverlay({ selectedProducts, selected, setSelected, params, total
           );
         })}
       </div>
-
-      {/* Add more products panel */}
       <div style={{maxWidth:1280,margin:"0 auto",width:"100%",padding:"40px 40px 0"}}>
         <div style={{fontSize:11,letterSpacing:2.5,textTransform:"uppercase",color:C.ink,fontWeight:700,paddingBottom:10,borderBottom:`1.5px solid ${C.ink}`,marginBottom:20,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
           <span>Add more products</span>
           <span style={{fontSize:10,color:C.muted,fontWeight:400,letterSpacing:1}}>{notSelected.length} not in catalogue</span>
         </div>
-        {/* Search box */}
         <div style={{marginBottom:16,maxWidth:400}}>
-          <input
-            type="text"
-            placeholder="Search by name or category…"
-            value={addSearch}
-            onChange={e=>setAddSearch(e.target.value)}
-            style={{display:"block",width:"100%",padding:"9px 12px",background:"#F5F0EA",border:`1px solid ${C.rule}`,fontSize:14,fontFamily:"'EB Garamond',serif",color:C.ink,outline:"none",borderRadius:3}}
-          />
+          <input type="text" placeholder="Search by name or category…" value={addSearch} onChange={e=>setAddSearch(e.target.value)} style={{display:"block",width:"100%",padding:"9px 12px",background:"#F5F0EA",border:`1px solid ${C.rule}`,fontSize:14,fontFamily:"'EB Garamond',serif",color:C.ink,outline:"none",borderRadius:3}}/>
         </div>
-        {/* Results list */}
         <div style={{background:"#fff",border:`0.5px solid ${C.rule}`,maxHeight:320,overflowY:"auto"}}>
           {addResults.length === 0 ? (
             <div style={{padding:"20px 16px",fontSize:13,color:C.muted,fontStyle:"italic"}}>No products found</div>
@@ -1049,39 +1025,25 @@ function PreviewOverlay({ selectedProducts, selected, setSelected, params, total
             const tierC = TIER_COLOR[p.tier] || C.muted;
             const price = p._price || parseFloat(p.price) || 0;
             return (
-              <div key={p.id} style={{display:"flex",alignItems:"center",gap:14,padding:"10px 16px",borderBottom:i<addResults.length-1?`0.5px solid ${C.rule}`:"none",cursor:"pointer",transition:"background 0.1s"}}
+              <div key={p.id} style={{display:"flex",alignItems:"center",gap:14,padding:"10px 16px",borderBottom:i<addResults.length-1?`0.5px solid ${C.rule}`:"none",cursor:"pointer"}}
                 onMouseEnter={e=>e.currentTarget.style.background="#F9F5F0"}
                 onMouseLeave={e=>e.currentTarget.style.background="#fff"}
-                onClick={()=>addProduct(p.id)}
-              >
-                {/* Thumbnail */}
-                <div style={{width:44,height:44,flexShrink:0,background:C.warm,overflow:"hidden",position:"relative"}}>
-                  {p.image_url?.startsWith("http")
-                    ? <img src={p.image_url} alt={p.name} style={{width:"100%",height:"100%",objectFit:"cover"}}/>
-                    : <div style={{width:"100%",height:"100%",display:"flex",alignItems:"center",justifyContent:"center",fontSize:22}}>{p.fb_icon||"🎁"}</div>
-                  }
+                onClick={()=>addProduct(p.id)}>
+                <div style={{width:44,height:44,flexShrink:0,background:C.warm,overflow:"hidden"}}>
+                  {p.image_url?.startsWith("http") ? <img src={p.image_url} alt={p.name} style={{width:"100%",height:"100%",objectFit:"cover"}}/> : <div style={{width:"100%",height:"100%",display:"flex",alignItems:"center",justifyContent:"center",fontSize:22}}>{p.fb_icon||"🎁"}</div>}
                 </div>
-                {/* Info */}
                 <div style={{flex:1,minWidth:0}}>
                   <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:15,color:C.ink,lineHeight:1.2,marginBottom:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.name}</div>
                   <div style={{fontSize:10,letterSpacing:1.5,textTransform:"uppercase",color:C.muted}}>{p.category}</div>
                 </div>
-                {/* Tier */}
                 <span style={{fontSize:9,letterSpacing:1,textTransform:"uppercase",padding:"2px 8px",border:`0.5px solid ${tierC}`,color:tierC,flexShrink:0}}>{p.tier}</span>
-                {/* Price */}
                 <div style={{fontFamily:"'Playfair Display',serif",fontSize:15,fontWeight:700,color:C.ink,flexShrink:0,minWidth:80,textAlign:"right"}}>₹{price.toLocaleString("en-IN")}</div>
-                {/* Add button */}
                 <button style={{flexShrink:0,padding:"5px 14px",background:C.ink,border:"none",color:"#fff",fontSize:10,letterSpacing:1.5,textTransform:"uppercase",cursor:"pointer",fontFamily:"inherit"}}>+ Add</button>
               </div>
             );
           })}
         </div>
-        {addSearch && addResults.length > 0 && (
-          <div style={{fontSize:11,color:C.muted,marginTop:6}}>{addResults.length} result{addResults.length!==1?"s":""} · click any row to add to catalogue</div>
-        )}
       </div>
-
-      {/* Footer */}
       <div style={{maxWidth:1280,margin:"0 auto",width:"100%",padding:"32px 40px 48px",display:"flex",justifyContent:"space-between",alignItems:"flex-end",borderTop:`1.5px solid ${C.ink}`,marginTop:40}}>
         <div>
           <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:18,color:C.ink,marginBottom:4}}>Ikka Dukka Studio Private Limited</div>
