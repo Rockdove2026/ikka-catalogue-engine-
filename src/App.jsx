@@ -942,9 +942,7 @@ export default function App() {
             <div style={{flex:1,overflowY:"auto",padding:"0 0 32px"}}>
               {/* Image */}
               {detailProduct.image_url?.startsWith("http")&&(
-                <div style={{width:"100%",paddingBottom:"50%",position:"relative",overflow:"hidden",background:C.warm}}>
-                  <img src={detailProduct.image_url} alt={detailProduct.name} style={{position:"absolute",inset:0,width:"100%",height:"100%",objectFit:"cover"}}/>
-                </div>
+                <img src={detailProduct.image_url} alt={detailProduct.name} style={{width:"100%",display:"block",maxHeight:380,objectFit:"contain",background:C.warm}}/>
               )}
 
               <div style={{padding:"24px 28px"}}>
