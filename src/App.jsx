@@ -123,7 +123,7 @@ export default function App() {
   }, []);
 
   const loadProductTags = useCallback(async () => {
-    const { data } = await supabase.from("product_tags").select("product_id, tag, dimension").eq("human_confirmed", true);
+    const { data } = await supabase.from("product_tags").select("product_id, tag, dimension");
     if (data) { const map = {}; data.forEach(({ product_id, tag, dimension }) => { if (!map[product_id]) map[product_id] = []; map[product_id].push({ tag, dimension }); }); setProductTagMap(map); }
   }, []);
 
