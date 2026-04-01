@@ -922,7 +922,7 @@ export default function App() {
       {/* ── Product Detail Panel ── */}
       {detailProduct&&(
         <div style={{position:"fixed",inset:0,background:"rgba(26,22,20,0.6)",zIndex:300,display:"flex",alignItems:"stretch",justifyContent:"flex-end"}} onClick={()=>setDetailProduct(null)}>
-          <div style={{background:C.stone,width:"min(560px,100vw)",display:"flex",flexDirection:"column",overflow:"hidden"}} onClick={e=>e.stopPropagation()}>
+          <div style={{background:C.stone,width:"min(440px,100vw)",display:"flex",flexDirection:"column",overflow:"hidden"}} onClick={e=>e.stopPropagation()}>
             {/* Header */}
             <div style={{background:C.sidebar,padding:"20px 28px",flexShrink:0}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
@@ -942,7 +942,7 @@ export default function App() {
             <div style={{flex:1,overflowY:"auto",padding:"0 0 32px"}}>
               {/* Image */}
               {detailProduct.image_url?.startsWith("http")&&(
-                <div style={{width:"100%",paddingBottom:"65%",position:"relative",overflow:"hidden",background:C.warm}}>
+                <div style={{width:"100%",paddingBottom:"50%",position:"relative",overflow:"hidden",background:C.warm}}>
                   <img src={detailProduct.image_url} alt={detailProduct.name} style={{position:"absolute",inset:0,width:"100%",height:"100%",objectFit:"cover"}}/>
                 </div>
               )}
