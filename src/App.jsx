@@ -116,6 +116,7 @@ export default function App() {
   const [customTags, setCustomTags] = useState({});
   const [newTags, setNewTags] = useState({});
   const [keywordOnly, setKeywordOnly] = useState(false);
+  const [detailProduct, setDetailProduct] = useState(null);
   const queryTimer = useRef(null);
 
   const loadTagLibrary = useCallback(async () => {
@@ -675,10 +676,12 @@ export default function App() {
                       const f=p._fulfillment||getFulfillmentState(p,parseInt(params.qty)||1);
                       const sb=stockBadge(f);
                       return (
-                        <div key={p.id} className={`p-card${isSel?" sel":""}`} onClick={()=>setSelected(prev=>{const n=new Set(prev);n.has(p.id)?n.delete(p.id):n.add(p.id);return n;})}>
+                        <div key={p.id} className={`p-card${isSel?" sel":""}`} onClick={()=>setDetailProduct(p)}>
                           <div className="p-score">{p._score}% match</div>
                           {p._tagBoost>0&&<div className="p-tag-boost">tag match</div>}
-                          {isSel&&<div className="p-check"><svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="2,6 5,9 10,3"/></svg></div>}
+                          <div onClick={e=>{e.stopPropagation();setSelected(prev=>{const n=new Set(prev);n.has(p.id)?n.delete(p.id):n.add(p.id);return n;});}} style={{position:"absolute",top:12,right:12,width:28,height:28,background:isSel?C.ink:"rgba(255,255,255,0.85)",border:`1.5px solid ${isSel?C.ink:C.rule}`,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",zIndex:3,borderRadius:2}}>
+                            {isSel&&<svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="2,6 5,9 10,3"/></svg>}
+                          </div>
                           <div className="p-img">{p.image_url?.startsWith("http")?<img src={p.image_url} alt={p.name}/>:<div className="p-img-emoji">{p.fb_icon||"🎁"}</div>}</div>
                           <div className="p-body">
                             <div className="p-cat-row"><div className="p-cat">{p.category}</div><span className="p-tier" style={{color:tierC,borderColor:tierC}}>{p.tier}</span></div>
@@ -914,6 +917,143 @@ export default function App() {
           getFulfillmentState={getFulfillmentState}
           stockBadge={stockBadge}
         />
+      )}
+
+      {/* ── Product Detail Panel ── */}
+      {detailProduct&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(26,22,20,0.6)",zIndex:300,display:"flex",alignItems:"stretch",justifyContent:"flex-end"}} onClick={()=>setDetailProduct(null)}>
+          <div style={{background:C.stone,width:"min(560px,100vw)",display:"flex",flexDirection:"column",overflow:"hidden"}} onClick={e=>e.stopPropagation()}>
+            {/* Header */}
+            <div style={{background:C.sidebar,padding:"20px 28px",flexShrink:0}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
+                <div style={{flex:1,paddingRight:16}}>
+                  <div style={{fontSize:9,letterSpacing:2,textTransform:"uppercase",color:"#888",marginBottom:6}}>{detailProduct.category}</div>
+                  <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:24,color:"#fff",fontWeight:300,lineHeight:1.2,marginBottom:6}}>{detailProduct.name}</div>
+                  <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                    <span style={{fontSize:9,letterSpacing:1,textTransform:"uppercase",padding:"2px 8px",border:`0.5px solid ${TIER_COLOR[detailProduct.tier]||C.muted}`,color:TIER_COLOR[detailProduct.tier]||C.muted}}>{detailProduct.tier}</span>
+                    {(()=>{const f=getFulfillmentState(detailProduct,parseInt(params.qty)||1);const sb=stockBadge(f);return <span style={{fontSize:9,letterSpacing:1,textTransform:"uppercase",padding:"3px 9px",borderRadius:99,background:sb.bg,color:sb.color,fontWeight:700}}>{f.label}</span>;})()}
+                  </div>
+                </div>
+                <button onClick={()=>setDetailProduct(null)} style={{background:"transparent",border:"none",color:"#888",fontSize:22,cursor:"pointer",lineHeight:1,flexShrink:0}}>×</button>
+              </div>
+            </div>
+
+            {/* Body */}
+            <div style={{flex:1,overflowY:"auto",padding:"0 0 32px"}}>
+              {/* Image */}
+              {detailProduct.image_url?.startsWith("http")&&(
+                <div style={{width:"100%",paddingBottom:"65%",position:"relative",overflow:"hidden",background:C.warm}}>
+                  <img src={detailProduct.image_url} alt={detailProduct.name} style={{position:"absolute",inset:0,width:"100%",height:"100%",objectFit:"cover"}}/>
+                </div>
+              )}
+
+              <div style={{padding:"24px 28px"}}>
+                {/* Pricing */}
+                <div style={{marginBottom:20}}>
+                  <div style={{fontSize:9,letterSpacing:2,textTransform:"uppercase",color:C.muted,marginBottom:8}}>Pricing</div>
+                  <div style={{display:"flex",gap:1}}>
+                    {[["1–99",1],["100–199",0.85],["200–499",0.80],["500–999",0.70],["1000+",0.60]].map(([label,mult])=>(
+                      <div key={label} style={{flex:1,background:"#fff",padding:"8px 10px",borderRight:`0.5px solid ${C.rule}`,textAlign:"center"}}>
+                        <div style={{fontSize:9,color:C.muted,letterSpacing:1,textTransform:"uppercase",marginBottom:3}}>{label}</div>
+                        <div style={{fontFamily:"'Playfair Display',serif",fontSize:13,fontWeight:700,color:C.ink}}>₹{Math.round(parseFloat(detailProduct.price)*mult).toLocaleString("en-IN")}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Description */}
+                {detailProduct.description&&(
+                  <div style={{marginBottom:20}}>
+                    <div style={{fontSize:9,letterSpacing:2,textTransform:"uppercase",color:C.muted,marginBottom:8}}>Description</div>
+                    <div style={{fontSize:15,color:C.ink,lineHeight:1.65,fontFamily:"'Cormorant Garamond',serif"}}>{detailProduct.description}</div>
+                  </div>
+                )}
+
+                {/* What's in the box */}
+                {detailProduct.whats_in_box?.length>0&&(
+                  <div style={{marginBottom:20}}>
+                    <div style={{fontSize:9,letterSpacing:2,textTransform:"uppercase",color:C.muted,marginBottom:8}}>What's in the box</div>
+                    <div style={{display:"flex",flexDirection:"column",gap:4}}>
+                      {detailProduct.whats_in_box.map((item,i)=>(
+                        <div key={i} style={{display:"flex",gap:10,fontSize:13,color:C.ink,alignItems:"flex-start"}}>
+                          <span style={{color:C.muted,flexShrink:0}}>—</span><span>{item}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Occasions */}
+                {detailProduct.occasions&&(
+                  <div style={{marginBottom:20}}>
+                    <div style={{fontSize:9,letterSpacing:2,textTransform:"uppercase",color:C.muted,marginBottom:8}}>Occasions</div>
+                    <div style={{display:"flex",flexWrap:"wrap",gap:5}}>
+                      {detailProduct.occasions.split("|").map(o=>o.trim()).filter(Boolean).map(o=>(
+                        <span key={o} style={{fontSize:11,padding:"3px 10px",background:"#fff",border:`0.5px solid ${C.rule}`,color:C.ink}}>{o}</span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Logistics */}
+                <div style={{marginBottom:20}}>
+                  <div style={{fontSize:9,letterSpacing:2,textTransform:"uppercase",color:C.muted,marginBottom:8}}>Logistics</div>
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:1}}>
+                    {[
+                      ["Lead time", (()=>{const f=getFulfillmentState(detailProduct,parseInt(params.qty)||1);return f.leadTime;})()],
+                      ["Min. order", (()=>{const f=getFulfillmentState(detailProduct,parseInt(params.qty)||1);return f.effectiveMoq===1?"1 unit":`${f.effectiveMoq} units`;})()],
+                      detailProduct.box_dimensions&&["Box dimensions", detailProduct.box_dimensions],
+                      detailProduct.weight_grams&&["Weight", `${detailProduct.weight_grams}g`],
+                    ].filter(Boolean).map(([label,val])=>(
+                      <div key={label} style={{background:"#fff",padding:"10px 14px"}}>
+                        <div style={{fontSize:9,letterSpacing:1.5,textTransform:"uppercase",color:C.muted,marginBottom:3}}>{label}</div>
+                        <div style={{fontSize:13,color:C.ink,fontFamily:"'EB Garamond',serif"}}>{val}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Attributes */}
+                <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:20}}>
+                  {detailProduct.edible&&<span style={{fontSize:10,padding:"3px 10px",background:"#FAEEDA",border:"0.5px solid #c8a96e",color:"#854F0B"}}>Edible</span>}
+                  {detailProduct.fragile&&<span style={{fontSize:10,padding:"3px 10px",background:"#FAEEDA",border:"0.5px solid #c8a96e",color:"#854F0B"}}>Fragile</span>}
+                  {detailProduct.customisable&&<span style={{fontSize:10,padding:"3px 10px",background:"#f0f8f0",border:"0.5px solid #5a8a5a",color:"#3B6D11"}}>Customisable</span>}
+                </div>
+
+                {/* Keywords */}
+                {detailProduct.keywords&&(
+                  <div style={{marginBottom:20}}>
+                    <div style={{fontSize:9,letterSpacing:2,textTransform:"uppercase",color:C.muted,marginBottom:8}}>Search Keywords</div>
+                    <div style={{fontSize:13,color:C.muted,fontStyle:"italic"}}>{detailProduct.keywords}</div>
+                  </div>
+                )}
+
+                {/* Tags */}
+                {productTagMap[detailProduct.id]?.length>0&&(
+                  <div>
+                    <div style={{fontSize:9,letterSpacing:2,textTransform:"uppercase",color:C.muted,marginBottom:8}}>Tags</div>
+                    <div style={{display:"flex",flexWrap:"wrap",gap:5}}>
+                      {productTagMap[detailProduct.id].map(({tag,dimension,human_confirmed})=>(
+                        <span key={tag} style={{fontSize:10,padding:"3px 9px",borderRadius:99,background:human_confirmed?"#E1F5EE":"#F1EFE8",border:`0.5px solid ${human_confirmed?"#1D9E75":C.rule}`,color:human_confirmed?"#085041":C.muted}}>{tag}</span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div style={{background:"#fff",borderTop:`0.5px solid ${C.rule}`,padding:"16px 28px",display:"flex",justifyContent:"space-between",alignItems:"center",flexShrink:0}}>
+              <div style={{fontFamily:"'Playfair Display',serif",fontSize:22,fontWeight:900,color:C.ink}}>₹{parseFloat(detailProduct.price).toLocaleString("en-IN")}</div>
+              <div style={{display:"flex",gap:8}}>
+                <button onClick={()=>{openTagReview(detailProduct);setDetailProduct(null);}} style={{padding:"9px 16px",border:`0.5px solid ${C.green}`,background:"transparent",color:C.green,fontSize:10,letterSpacing:1.5,textTransform:"uppercase",cursor:"pointer"}}>Tag →</button>
+                <button onClick={()=>{setSelected(prev=>{const n=new Set(prev);n.has(detailProduct.id)?n.delete(detailProduct.id):n.add(detailProduct.id);return n;});setDetailProduct(null);}} style={{padding:"9px 20px",background:selected.has(detailProduct.id)?C.red:C.ink,border:"none",color:"#fff",fontSize:10,letterSpacing:1.5,textTransform:"uppercase",cursor:"pointer"}}>
+                  {selected.has(detailProduct.id)?"Remove from selection":"Add to selection"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       {tagProduct&&(
