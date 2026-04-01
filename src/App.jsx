@@ -498,8 +498,48 @@ export default function App() {
         .tag-loading{display:flex;align-items:center;justify-content:center;min-height:200px;font-size:11px;letter-spacing:3px;text-transform:uppercase;color:${C.muted};}
         .f-label{font-size:9px;letter-spacing:2.5px;text-transform:uppercase;color:${C.muted};display:block;margin-bottom:8px;}
         .f-save{padding:11px 28px;background:${C.cobalt};border:none;color:#fff;font-size:11px;letter-spacing:3px;text-transform:uppercase;cursor:pointer;}
+
+        /* ── Preview overlay ── */
+        .prev-overlay{position:fixed;inset:0;background:#fff;z-index:150;overflow-y:auto;display:flex;flex-direction:column;}
+        .prev-header{background:${C.sidebar};padding:16px 40px;display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;z-index:10;flex-shrink:0;}
+        .prev-title-block{}
+        .prev-eyebrow{font-size:9px;letter-spacing:3px;color:#555;text-transform:uppercase;margin-bottom:4px;}
+        .prev-title{font-family:'Cormorant Garamond',serif;font-size:24px;color:#fff;font-weight:300;letter-spacing:1px;}
+        .prev-actions{display:flex;align-items:center;gap:16px;}
+        .prev-summary{text-align:right;}
+        .prev-count{font-size:9px;letterSpacing:2px;text-transform:uppercase;color:#888;margin-bottom:2px;}
+        .prev-total{font-family:'Playfair Display',serif;font-size:20px;color:#fff;}
+        .prev-gst{font-size:10px;color:#666;}
+        .prev-hint{font-size:11px;color:#888;margin-top:2px;font-style:italic;}
+        .prev-close{background:transparent;border:1px solid #444;color:#fff;padding:"8px 16px";font-size:10px;letter-spacing:2px;text-transform:uppercase;cursor:pointer;font-family:inherit;padding:8px 16px;flex-shrink:0;}
+        .prev-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:2px;background:${C.rule};padding:40px;max-width:1280px;margin:0 auto;width:100%;}
+        .prev-card{background:#fff;position:relative;overflow:hidden;}
+        .prev-card-removed{opacity:0.35;filter:grayscale(1);}
+        .prev-img{width:100%;padding-bottom:85%;position:relative;overflow:hidden;background:${C.warm};}
+        .prev-img img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;}
+        .prev-img-emoji{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:64px;}
+        .prev-remove{position:absolute;top:10px;right:10px;width:28px;height:28px;background:rgba(14,12,11,0.7);border:none;color:#fff;font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;z-index:5;border-radius:2px;}
+        .prev-remove:hover{background:${C.red};}
+        .prev-restore{position:absolute;top:10px;right:10px;width:28px;height:28px;background:rgba(14,12,11,0.7);border:none;color:#fff;font-size:11px;cursor:pointer;display:flex;align-items:center;justify-content:center;z-index:5;border-radius:2px;letter-spacing:0;}
+        .prev-tier-badge{position:absolute;top:10px;left:10px;background:rgba(14,12,11,0.65);color:#fff;font-size:9px;letter-spacing:1.5px;text-transform:uppercase;padding:3px 10px;}
+        .prev-body{padding:16px 18px 20px;}
+        .prev-cat{font-size:9px;letter-spacing:2px;text-transform:uppercase;color:${C.muted};margin-bottom:5px;}
+        .prev-name{font-family:'Cormorant Garamond',serif;font-size:19px;line-height:1.3;color:${C.ink};margin-bottom:10px;}
+        .prev-price-row{display:flex;justify-content:space-between;align-items:baseline;border-top:0.5px solid ${C.rule};padding-top:10px;}
+        .prev-price{font-family:'Playfair Display',serif;font-size:20px;font-weight:900;color:${C.ink};}
+        .prev-per{font-size:11px;color:${C.muted};}
+        .prev-footer{max-width:1280px;margin:0 auto;width:100%;padding:32px 40px 48px;display:flex;justify-content:space-between;align-items:flex-end;border-top:1.5px solid ${C.ink};margin-top:2px;}
+        .prev-brand{font-family:'Cormorant Garamond',serif;font-size:18px;color:${C.ink};margin-bottom:4px;}
+        .prev-contact{font-size:11px;color:${C.muted};}
+        .prev-total-block{text-align:right;}
+        .prev-total-label{font-size:9px;letter-spacing:2px;text-transform:uppercase;color:${C.muted};margin-bottom:4px;}
+        .prev-total-num{font-family:'Playfair Display',serif;font-size:30px;font-weight:900;color:${C.ink};}
+        .prev-total-sub{font-size:11px;color:${C.muted};}
+        .prev-generate{background:${C.ink};color:#fff;border:none;padding:10px 28px;font-size:11px;letter-spacing:2px;text-transform:uppercase;cursor:pointer;font-family:inherit;flex-shrink:0;}
+        .prev-generate:disabled{opacity:0.6;cursor:not-allowed;}
       `}</style>
 
+      {/* ── HEADER ── */}
       <div className="hdr">
         <div className="hdr-brand">
           <div className="hdr-name">Ikka &thinsp;<em>Dukka</em></div>
@@ -512,11 +552,14 @@ export default function App() {
         </div>
       </div>
 
+      {/* ══ QUERY TAB ══ */}
       {tab==="query" && (
         <div className="layout">
           <div className="sidebar">
             <div className="s-title">Find gifts</div>
             <div className="s-sub">Describe what you need or use the filters below.</div>
+
+            {/* Search */}
             <div style={{marginBottom:20}}>
               <div style={{display:"flex",gap:6,alignItems:"center"}}>
                 <input type="text" placeholder="e.g. festive gifts for CXOs..." value={freeQuery} onChange={e=>setFreeQuery(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")interpretQuery(freeQuery);}} style={{flex:1,padding:"9px 10px",background:"#F5F0EA",border:"1px solid #C8B8B0",borderRadius:4,fontSize:14,fontFamily:"'EB Garamond',serif",color:"#1A1614",outline:"none",minWidth:0,display:"block"}}/>
@@ -580,7 +623,7 @@ export default function App() {
               <div style={{fontFamily:"'Playfair Display',serif",fontSize:28,fontWeight:900,color:"#1A1614"}}>{results.length}</div>
               <div style={{fontSize:12,color:"#8A7A72"}}>products matched · {selected.size} selected</div>
               {hasTagFilters&&<div style={{fontSize:11,color:"#5a8a5a",marginTop:4}}>Tag filters active</div>}
-              {params.requireCustomisation&&<div style={{fontSize:11,color:C.amber,marginTop:4}}>Customisation filter on — MTO only</div>}
+              {params.requireCustomisation&&<div style={{fontSize:11,color:C.amber,marginTop:4}}>Customisation filter on</div>}
             </div>
           </div>
 
@@ -594,10 +637,10 @@ export default function App() {
                 {results.length===0?<div className="loading">No products match — try adjusting your filters</div>:(
                   <div className="product-grid">
                     {results.map(p=>{
-                      const isSel = selected.has(p.id);
-                      const tierC = TIER_COLOR[p.tier]||C.muted;
-                      const f     = p._fulfillment || getFulfillmentState(p, parseInt(params.qty)||1);
-                      const sb    = stockBadge(f);
+                      const isSel=selected.has(p.id);
+                      const tierC=TIER_COLOR[p.tier]||C.muted;
+                      const f=p._fulfillment||getFulfillmentState(p,parseInt(params.qty)||1);
+                      const sb=stockBadge(f);
                       return (
                         <div key={p.id} className={`p-card${isSel?" sel":""}`} onClick={()=>setSelected(prev=>{const n=new Set(prev);n.has(p.id)?n.delete(p.id):n.add(p.id);return n;})}>
                           <div className="p-score">{p._score}% match</div>
@@ -632,7 +675,7 @@ export default function App() {
                       <div className="sel-qty">{params.qty||1} units × {selected.size} products</div>
                     </div>
                     <div className="sel-btns">
-                      <button className="sel-btn-sec" onClick={()=>setShowPreview(v=>!v)}>{showPreview?"Hide preview":"Preview catalogue"}</button>
+                      <button className="sel-btn-sec" onClick={()=>setShowPreview(true)}>Preview catalogue</button>
                       <button className="sel-btn-primary" onClick={()=>setShowPdfMeta(true)}>Generate PDF →</button>
                       {pdfUrl&&<a href={pdfUrl} target="_blank" rel="noreferrer" style={{color:C.blue,fontSize:12}}>View PDF ↗</a>}
                     </div>
@@ -644,6 +687,7 @@ export default function App() {
         </div>
       )}
 
+      {/* ══ ADMIN TAB ══ */}
       {tab==="admin"&&(
         <div className="admin-layout">
           <div className="admin-side">
@@ -653,6 +697,7 @@ export default function App() {
             ))}
           </div>
           <div className="admin-main">
+
             {adminView==="list"&&(
               <>
                 <div className="admin-eyebrow">
@@ -664,9 +709,9 @@ export default function App() {
                     <thead><tr>{["Name","Category","Price","Stock","Tier","Tags","Actions"].map((h,i)=><th className="admin-th" key={i}>{h}</th>)}</tr></thead>
                     <tbody>
                       {products.map(p=>{
-                        const st = STATUS_STYLE[p.tagging_status]||STATUS_STYLE.untagged;
-                        const f  = getFulfillmentState(p, 1);
-                        const sb = stockBadge(f);
+                        const st=STATUS_STYLE[p.tagging_status]||STATUS_STYLE.untagged;
+                        const f=getFulfillmentState(p,1);
+                        const sb=stockBadge(f);
                         return (
                           <tr key={p.id}>
                             <td className="admin-td">{p.name}</td>
@@ -691,9 +736,11 @@ export default function App() {
                 </div>
               </>
             )}
+
             {(adminView==="add"||adminView==="edit")&&(
               <div className="pf-wrap">
                 <div className="admin-eyebrow">{editProduct?`Editing — ${editProduct.name}`:"Add New Product"}</div>
+
                 <div className="pf-card">
                   <div className="pf-card-head"><div className="pf-card-num">1</div><div className="pf-card-title">Core Details</div></div>
                   <div className="pf-card-body">
@@ -705,6 +752,7 @@ export default function App() {
                     <div className="pf-row pf-row-1"><div className="pf-field"><label className="pf-label">Description</label><textarea className="pf-ta" rows={2} placeholder="Short product description…" value={form.description} onChange={e=>setForm(p=>({...p,description:e.target.value}))}/></div></div>
                   </div>
                 </div>
+
                 <div className="pf-card">
                   <div className="pf-card-head"><div className="pf-card-num">2</div><div className="pf-card-title">Pricing</div></div>
                   <div className="pf-card-body">
@@ -715,6 +763,7 @@ export default function App() {
                     {form.price&&(<div style={{display:"flex",gap:1,marginTop:4}}>{[["1–99",1],["100–199",0.85],["200–499",0.80],["500–999",0.70],["1000+",0.60]].map(([label,mult])=>(<div key={label} style={{flex:1,background:C.stone,padding:"8px 10px",borderRight:`0.5px solid ${C.rule}`}}><div style={{fontSize:9,color:C.muted,letterSpacing:1,textTransform:"uppercase",marginBottom:3}}>{label}</div><div style={{fontFamily:"'Playfair Display',serif",fontSize:13,fontWeight:700,color:C.ink}}>₹{Math.round(parseFloat(form.price)*mult).toLocaleString("en-IN")}</div></div>))}</div>)}
                   </div>
                 </div>
+
                 <div className="pf-card">
                   <div className="pf-card-head"><div className="pf-card-num">3</div><div className="pf-card-title">Availability & Occasions</div></div>
                   <div className="pf-card-body">
@@ -722,12 +771,14 @@ export default function App() {
                     <div className="pf-row pf-row-1"><div className="pf-field"><label className="pf-label">Image URL</label><input className="pf-inp" type="text" placeholder="https://…" value={form.image_url} onChange={e=>setForm(p=>({...p,image_url:e.target.value}))}/>{form.image_url?.startsWith("http")&&<img src={form.image_url} alt="" style={{marginTop:8,height:56,width:56,objectFit:"cover",border:`0.5px solid ${C.rule}`}}/>}</div></div>
                   </div>
                 </div>
+
                 <div className="pf-card">
                   <div className="pf-card-head"><div className="pf-card-num">4</div><div className="pf-card-title">Attributes</div></div>
                   <div className="pf-card-body" style={{paddingTop:8,paddingBottom:8}}>
                     {[{key:"edible",label:"Edible / food product",sub:"Excluded when client restricts edible gifts"},{key:"fragile",label:"Fragile item",sub:"Excluded when client restricts fragile gifts"},{key:"customisable",label:"Available for customisation",sub:"Branding, engraving, message cards etc."}].map(a=>(<div className="pf-toggle-row" key={a.key}><div><div className="pf-toggle-lbl">{a.label}</div><div className="pf-toggle-sub">{a.sub}</div></div><input type="checkbox" className="s-chk" checked={form[a.key]} onChange={e=>setForm(p=>({...p,[a.key]:e.target.checked}))}/></div>))}
                   </div>
                 </div>
+
                 <div className="pf-card">
                   <div className="pf-card-head"><div className="pf-card-num">5</div><div className="pf-card-title">Logistics & Corporate Info</div></div>
                   <div className="pf-card-body">
@@ -752,6 +803,7 @@ export default function App() {
                     </div>
                   </div>
                 </div>
+
                 <div className="pf-card">
                   <div className="pf-card-head"><div className="pf-card-num">6</div><div className="pf-card-title">Stock & Fulfilment</div></div>
                   <div className="pf-card-body">
@@ -774,19 +826,25 @@ export default function App() {
                     )}
                   </div>
                 </div>
+
                 <div className="pf-actions">
                   <button className="pf-cancel" onClick={()=>{setAdminView("list");setEditProduct(null);setForm(emptyForm);}}>Cancel</button>
                   <button className="pf-save" onClick={saveProduct} disabled={saving||!form.name||!form.price}>{saving?"Saving…":editProduct?"Save Changes →":"Add Product →"}</button>
                 </div>
               </div>
             )}
+
             {adminView==="csv"&&(
               <>
                 <div className="admin-eyebrow">Bulk Upload — CSV</div>
                 <div style={{maxWidth:640}}>
                   <div style={{background:"#fff",border:`0.5px solid ${C.rule}`,padding:"20px 24px",marginBottom:16}}>
                     <div style={{fontFamily:"'Playfair Display',serif",fontSize:14,fontWeight:700,color:C.ink,marginBottom:6}}>CSV Format</div>
-                    <div style={{fontFamily:"'EB Garamond',serif",fontSize:13,color:C.muted,lineHeight:1.7}}>Required: <strong>name, price</strong><br/>Optional: category, tier, description, occasions (pipe-separated), image_url, edible, fragile, customisable, popularity, lead_time, moq, box_dimensions, weight_grams, stock_quantity, mto_moq, mto_lead_time</div>
+                    <div style={{fontFamily:"'EB Garamond',serif",fontSize:13,color:C.muted,lineHeight:1.7,marginBottom:12}}>
+                      Required: <strong>name, price</strong><br/>
+                      Optional: category, tier, description, occasions (pipe-separated), image_url, edible, fragile, customisable, popularity, lead_time, moq, box_dimensions, weight_grams, stock_quantity, mto_moq, mto_lead_time
+                    </div>
+                    <a href="/product_upload_template.csv" download style={{fontFamily:"'EB Garamond',serif",fontSize:12,letterSpacing:1.5,textTransform:"uppercase",color:C.cobalt}}>Download template →</a>
                   </div>
                   <div style={{marginBottom:20}}><label className="f-label">Select CSV file</label><input type="file" accept=".csv" onChange={handleCSVFile} style={{display:"block",width:"100%",padding:"8px 0",fontFamily:"'EB Garamond',serif",fontSize:14,color:C.ink,borderBottom:`1px solid ${C.rule}`,background:"transparent",outline:"none",cursor:"pointer"}}/></div>
                   {csvRows.length>0&&(<div style={{marginBottom:20}}><div style={{fontFamily:"'EB Garamond',serif",fontSize:13,color:C.muted,marginBottom:10}}>{csvRows.length} rows ready · AI will auto-tag after upload</div><button onClick={uploadCSV} disabled={csvUploading} className="f-save">{csvUploading?`Uploading…`:`Upload ${csvRows.length} Products →`}</button></div>)}
@@ -798,6 +856,7 @@ export default function App() {
         </div>
       )}
 
+      {/* ── PDF Meta Overlay ── */}
       {showPdfMeta&&(
         <div className="overlay" onClick={()=>setShowPdfMeta(false)}>
           <div className="overlay-box" onClick={e=>e.stopPropagation()}>
@@ -813,6 +872,26 @@ export default function App() {
         </div>
       )}
 
+      {/* ══ FULL SCREEN PREVIEW OVERLAY ══ */}
+      {showPreview&&(
+        <PreviewOverlay
+          selectedProducts={selectedProducts}
+          selected={selected}
+          setSelected={setSelected}
+          params={params}
+          totalBudget={totalBudget}
+          clientName={clientName}
+          pdfLoading={pdfLoading}
+          onClose={()=>setShowPreview(false)}
+          onGeneratePDF={()=>{setShowPreview(false);setShowPdfMeta(true);}}
+          C={C}
+          TIER_COLOR={TIER_COLOR}
+          getFulfillmentState={getFulfillmentState}
+          stockBadge={stockBadge}
+        />
+      )}
+
+      {/* ── Tag Review Panel ── */}
       {tagProduct&&(
         <div className="tag-overlay" onClick={()=>setTagProduct(null)}>
           <div className="tag-panel" onClick={e=>e.stopPropagation()}>
@@ -864,5 +943,85 @@ export default function App() {
         </div>
       )}
     </>
+  );
+}
+
+/* ── Preview Overlay Component ── */
+function PreviewOverlay({ selectedProducts, selected, setSelected, params, totalBudget, clientName, pdfLoading, onClose, onGeneratePDF, C, TIER_COLOR, getFulfillmentState, stockBadge }) {
+  const qty = parseInt(params.qty) || 1;
+  const activeProducts = selectedProducts.filter(p => selected.has(p.id));
+  const activeTotal = activeProducts.reduce((s,p) => s + p._price * qty, 0);
+
+  const removeProduct = (id) => {
+    setSelected(prev => { const n = new Set(prev); n.delete(id); return n; });
+  };
+
+  return (
+    <div className="prev-overlay">
+      {/* Sticky header */}
+      <div className="prev-header">
+        <div className="prev-title-block">
+          <div className="prev-eyebrow">Ikka Dukka · Curated Gift Catalogue</div>
+          <div className="prev-title">{params.occasion !== "All" ? params.occasion : "Corporate Gifting"} Collection</div>
+          <div style={{fontSize:11,color:"#888",marginTop:4,fontStyle:"italic"}}>Click × on any product to remove it before generating PDF</div>
+        </div>
+        <div className="prev-actions">
+          <div className="prev-summary">
+            <div className="prev-count">{activeProducts.length} product{activeProducts.length !== 1 ? "s" : ""} selected</div>
+            <div className="prev-total">₹{activeTotal.toLocaleString("en-IN")}</div>
+            <div className="prev-gst">{qty} unit{qty > 1 ? "s" : ""} · excl. GST</div>
+          </div>
+          <button className="prev-generate" onClick={onGeneratePDF} disabled={pdfLoading || activeProducts.length === 0}>
+            {pdfLoading ? "Generating…" : "Generate PDF →"}
+          </button>
+          <button className="prev-close" onClick={onClose}>Close ×</button>
+        </div>
+      </div>
+
+      {/* Product grid */}
+      <div className="prev-grid">
+        {selectedProducts.map(p => {
+          const isActive = selected.has(p.id);
+          const tierC = TIER_COLOR[p.tier] || C.muted;
+          return (
+            <div key={p.id} className={`prev-card${isActive ? "" : " prev-card-removed"}`}>
+              <div className="prev-img">
+                {p.image_url?.startsWith("http")
+                  ? <img src={p.image_url} alt={p.name}/>
+                  : <div className="prev-img-emoji">{p.fb_icon || "🎁"}</div>
+                }
+                <div className="prev-tier-badge">{p.tier}</div>
+                {isActive ? (
+                  <button className="prev-remove" onClick={()=>removeProduct(p.id)} title="Remove from catalogue">×</button>
+                ) : (
+                  <button className="prev-restore" onClick={()=>setSelected(prev=>{const n=new Set(prev);n.add(p.id);return n;})} title="Add back">+ Add</button>
+                )}
+              </div>
+              <div className="prev-body">
+                <div className="prev-cat">{p.category}</div>
+                <div className="prev-name">{p.name}</div>
+                <div className="prev-price-row">
+                  <div className="prev-price">₹{p._price.toLocaleString("en-IN")}</div>
+                  <div className="prev-per">per unit</div>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Footer */}
+      <div style={{maxWidth:1280,margin:"0 auto",width:"100%",padding:"32px 40px 48px",display:"flex",justifyContent:"space-between",alignItems:"flex-end",borderTop:`1.5px solid ${C.ink}`,marginTop:2}}>
+        <div>
+          <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:18,color:C.ink,marginBottom:4}}>Ikka Dukka Studio Private Limited</div>
+          <div style={{fontSize:11,color:C.muted}}>www.ikkadukka.com · hello@ikkadukka.com</div>
+        </div>
+        <div style={{textAlign:"right"}}>
+          <div style={{fontSize:9,letterSpacing:2,textTransform:"uppercase",color:C.muted,marginBottom:4}}>Total Estimate</div>
+          <div style={{fontFamily:"'Playfair Display',serif",fontSize:30,fontWeight:900,color:C.ink}}>₹{activeTotal.toLocaleString("en-IN")}</div>
+          <div style={{fontSize:11,color:C.muted}}>{qty} unit{qty>1?"s":""} × {activeProducts.length} products · excl. GST</div>
+        </div>
+      </div>
+    </div>
   );
 }
