@@ -115,6 +115,7 @@ export default function App() {
   const [tagSearches, setTagSearches] = useState({});
   const [customTags, setCustomTags] = useState({});
   const [newTags, setNewTags] = useState({});
+  const [keywordOnly, setKeywordOnly] = useState(false);
   const queryTimer = useRef(null);
 
   const loadTagLibrary = useCallback(async () => {
@@ -123,8 +124,8 @@ export default function App() {
   }, []);
 
   const loadProductTags = useCallback(async () => {
-    const { data } = await supabase.from("product_tags").select("product_id, tag, dimension");
-    if (data) { const map = {}; data.forEach(({ product_id, tag, dimension }) => { if (!map[product_id]) map[product_id] = []; map[product_id].push({ tag, dimension }); }); setProductTagMap(map); }
+    const { data } = await supabase.from("product_tags").select("product_id, tag, dimension, confidence, human_confirmed");
+    if (data) { const map = {}; data.forEach(({ product_id, tag, dimension, confidence, human_confirmed }) => { if (!map[product_id]) map[product_id] = []; map[product_id].push({ tag, dimension, confidence: confidence||50, human_confirmed }); }); setProductTagMap(map); }
   }, []);
 
   const loadProducts = useCallback(async () => {
@@ -137,6 +138,7 @@ export default function App() {
   useEffect(() => { loadProducts(); loadTagLibrary(); loadProductTags(); }, [loadProducts, loadTagLibrary, loadProductTags]);
 
   const interpretQuery = useCallback(async (query) => {
+    setKeywordOnly(false);
     if (!query.trim()) { setInterpreted(null); setTagFilter({ intent:"", audience:"", style:"", include_tags:[], exclude_tags:[] }); return; }
     setQueryLoading(true);
     try {
@@ -150,7 +152,7 @@ export default function App() {
     setQueryLoading(false);
   }, []);
 
-  const clearSearch = () => { setFreeQuery(""); setInterpreted(null); setTagFilter({ intent:"", audience:"", style:"", include_tags:[], exclude_tags:[] }); };
+  const clearSearch = () => { setFreeQuery(""); setInterpreted(null); setTagFilter({ intent:"", audience:"", style:"", include_tags:[], exclude_tags:[] }); setKeywordOnly(false); };
   const addExcludeTag = (tag) => { const t = tag.toLowerCase().trim().replace(/\s+/g, "-"); if (!t || tagFilter.exclude_tags.includes(t)) return; setTagFilter(prev => ({ ...prev, exclude_tags: [...prev.exclude_tags, t] })); setExcludeInput(""); };
   const removeExcludeTag = (tag) => { setTagFilter(prev => ({ ...prev, exclude_tags: prev.exclude_tags.filter(t => t !== tag) })); };
 
@@ -159,29 +161,40 @@ export default function App() {
     const tagSet = new Set(pTags.map(t => t.tag));
     for (const ex of tagFilter.exclude_tags) { if (tagSet.has(ex)) return -1; }
     let boost = 0;
-    if (tagFilter.intent && tagSet.has(tagFilter.intent)) boost += 30;
-    if (tagFilter.audience && tagSet.has(tagFilter.audience)) boost += 25;
-    if (tagFilter.style && tagSet.has(tagFilter.style)) boost += 20;
-    for (const inc of tagFilter.include_tags) { if (tagSet.has(inc)) boost += 10; }
+    // Boost by confidence: human_confirmed full weight, AI-suggested weighted by confidence
+    const getTagBoost = (tag, base) => {
+      const t = pTags.find(x => x.tag === tag);
+      if (!t) return 0;
+      const weight = t.human_confirmed ? 1.0 : (t.confidence || 50) / 100;
+      return base * weight;
+    };
+    if (tagFilter.intent) boost += getTagBoost(tagFilter.intent, 30);
+    if (tagFilter.audience) boost += getTagBoost(tagFilter.audience, 25);
+    if (tagFilter.style) boost += getTagBoost(tagFilter.style, 20);
+    for (const inc of tagFilter.include_tags) { boost += getTagBoost(inc, 10); }
     return boost;
   }, [productTagMap, tagFilter]);
 
-  // ── NEW: keyword search directly against product fields ──
+  // ── Intelligent keyword search across ALL product fields ──
   const keywordScore = useCallback((p, query) => {
     if (!query.trim()) return 0;
-    const words = query.toLowerCase().split(/\s+/).filter(w => w.length > 2);
-    const haystack = [
-      p.name,
-      p.description,
-      p.occasions,
-      p.category,
-      p.whats_in_box?.join(" "),
-    ].filter(Boolean).join(" ").toLowerCase();
+    const words = query.toLowerCase().split(/\s+/).filter(w => w.length > 1);
+    const fields = {
+      name:         { text: p.name || "",                      weight: 3 },
+      category:     { text: p.category || "",                  weight: 2 },
+      description:  { text: p.description || "",               weight: 2 },
+      whats_in_box: { text: (p.whats_in_box || []).join(" "),  weight: 2 },
+      occasions:    { text: p.occasions || "",                 weight: 1 },
+    };
     let score = 0;
     for (const word of words) {
-      if (haystack.includes(word)) score += 20;
+      // \b word boundary so "tea" matches "teas" and "tea" but NOT "tealight"
+      const re = new RegExp("\\b" + word, "i");
+      for (const [, {text, weight}] of Object.entries(fields)) {
+        if (re.test(text)) score += 10 * weight;
+      }
     }
-    return Math.min(40, score);
+    return Math.min(60, score);
   }, []);
 
   const hasTagFilters = tagFilter.intent || tagFilter.audience || tagFilter.style || tagFilter.include_tags.length > 0 || tagFilter.exclude_tags.length > 0;
@@ -194,21 +207,20 @@ export default function App() {
       if (params.excludeFragile && p.fragile) return false;
       const price = priceAtQty(p.pricing_tiers, qty);
       if (budget < Infinity && price > budget * 1.1) return false;
-      if (hasTagFilters) {
+      // Only hard-exclude on explicit exclude_tags
+      if (tagFilter.exclude_tags.length > 0) {
         const pTags = productTagMap[p.id] || [];
         const tagSet = new Set(pTags.map(t => t.tag));
-        // Always hard-filter on exclude tags
         for (const ex of tagFilter.exclude_tags) { if (tagSet.has(ex)) return false; }
-        // Only hard-filter on intent/audience/style if the product has been tagged
-        // Untagged products still show — keyword search scores them instead
-        if (pTags.length > 0) {
-          if (tagFilter.intent && !tagSet.has(tagFilter.intent)) return false;
-          if (tagFilter.audience && !tagSet.has(tagFilter.audience)) return false;
-          if (tagFilter.style && !tagSet.has(tagFilter.style)) return false;
-        }
       }
       const fulfillment = getFulfillmentState(p, qty);
       if (params.requireCustomisation && !fulfillment.customisable) return false;
+      // When a search query is active, only show products with a relevance signal
+      if (freeQuery.trim()) {
+        const kScore = keywordScore(p, freeQuery);
+        const tScore = hasTagFilters ? tagScore(p.id) : 0;
+        if (kScore === 0 && tScore <= 0) return false;
+      }
       return true;
     }).map(p => {
       const fulfillment = getFulfillmentState(p, qty);
@@ -581,10 +593,10 @@ export default function App() {
 
             <div style={{marginBottom:20}}>
               <div style={{display:"flex",gap:6,alignItems:"center"}}>
-                <input type="text" placeholder="e.g. festive gifts for CXOs..." value={freeQuery} onChange={e=>setFreeQuery(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"){ const words = freeQuery.trim().split(/\s+/); if(words.length <= 3){ setInterpreted({summary:`Searching for "${freeQuery}"…`}); setTagFilter({intent:"",audience:"",style:"",include_tags:[],exclude_tags:[]}); } else { interpretQuery(freeQuery); }}}} style={{flex:1,padding:"9px 10px",background:"#F5F0EA",border:"1px solid #C8B8B0",borderRadius:4,fontSize:14,fontFamily:"'EB Garamond',serif",color:"#1A1614",outline:"none",minWidth:0,display:"block"}}/>
+                <input type="text" placeholder="e.g. festive gifts for CXOs..." value={freeQuery} onChange={e=>setFreeQuery(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")interpretQuery(freeQuery);}} style={{flex:1,padding:"9px 10px",background:"#F5F0EA",border:"1px solid #C8B8B0",borderRadius:4,fontSize:14,fontFamily:"'EB Garamond',serif",color:"#1A1614",outline:"none",minWidth:0,display:"block"}}/>
                 {freeQuery&&<button onClick={clearSearch} style={{background:"none",border:"none",color:"#8A7A72",cursor:"pointer",fontSize:18,padding:"0 4px",lineHeight:1,flexShrink:0}}>×</button>}
               </div>
-              <button onClick={()=>{ const words = freeQuery.trim().split(/\s+/); if(words.length <= 3){ setInterpreted({summary:`Searching for "${freeQuery}"…`}); setTagFilter({intent:"",audience:"",style:"",include_tags:[],exclude_tags:[]}); } else { interpretQuery(freeQuery); } }} disabled={!freeQuery.trim()||queryLoading} style={{display:"block",width:"100%",marginTop:6,padding:"8px",background:queryLoading?"#8A7A72":"#1A1614",color:"#fff",border:"none",fontSize:10,letterSpacing:2,textTransform:"uppercase",cursor:!freeQuery.trim()||queryLoading?"not-allowed":"pointer",opacity:!freeQuery.trim()?0.4:1,fontFamily:"inherit"}}>
+              <button onClick={()=>interpretQuery(freeQuery)} disabled={!freeQuery.trim()||queryLoading} style={{display:"block",width:"100%",marginTop:6,padding:"8px",background:queryLoading?"#8A7A72":"#1A1614",color:"#fff",border:"none",fontSize:10,letterSpacing:2,textTransform:"uppercase",cursor:!freeQuery.trim()||queryLoading?"not-allowed":"pointer",opacity:!freeQuery.trim()?0.4:1,fontFamily:"inherit"}}>
                 {queryLoading?"Interpreting…":"Search →"}
               </button>
               {interpreted&&!queryLoading&&(
