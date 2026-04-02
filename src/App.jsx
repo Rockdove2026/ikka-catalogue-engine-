@@ -103,7 +103,7 @@ export default function App() {
   const [saving, setSaving] = useState(false);
   const emptyForm = { name:"", category:"", price:"", tier:"Silver", image_url:"", occasions:"", description:"", edible:false, fragile:false, customisable:true, popularity:50, whats_in_box:[], box_dimensions:"", weight_grams:"", moq:"", lead_time:"", stock_quantity:"100", mto_moq:"", mto_lead_time:"", keywords:"" };
   const [form, setForm] = useState(emptyForm);
-  const [boxItemInput, setBoxItemInput] = useState("");
+  const [boxItemInput, setBoxItemInput] = useState(""); const [imageUploading, setImageUploading] = useState(false);
   const [csvRows, setCsvRows] = useState([]);
   const [csvUploading, setCsvUploading] = useState(false);
   const [csvStatus, setCsvStatus] = useState(null);
@@ -805,7 +805,7 @@ export default function App() {
                   <div className="pf-card-head"><div className="pf-card-num">3</div><div className="pf-card-title">Availability & Occasions</div></div>
                   <div className="pf-card-body">
                     <div className="pf-row pf-row-1"><div className="pf-field"><label className="pf-label">Occasions</label><input className="pf-inp" type="text" placeholder="e.g. Diwali|Birthday|Thank You" value={form.occasions} onChange={e=>setForm(p=>({...p,occasions:e.target.value}))}/><div className="pf-hint">Separate with | (pipe).</div></div></div>
-                    <div className="pf-row pf-row-1"><div className="pf-field"><label className="pf-label">Image URL</label><input className="pf-inp" type="text" placeholder="https://…" value={form.image_url} onChange={e=>setForm(p=>({...p,image_url:e.target.value}))}/>{form.image_url?.startsWith("http")&&<img src={form.image_url} alt="" style={{marginTop:8,height:56,width:56,objectFit:"cover",border:`0.5px solid ${C.rule}`}}/>}</div></div>
+                    <div className="pf-row pf-row-1"><div className="pf-field"><label className="pf-label">Image URL or Upload</label><div style={{display:"flex",gap:8,alignItems:"flex-end"}}><input className="pf-inp" type="text" placeholder="https://…" style={{flex:1}} value={form.image_url} onChange={e=>setForm(p=>({...p,image_url:e.target.value}))}/><label style={{flexShrink:0,padding:"6px 14px",background:imageUploading?C.muted:C.ink,border:"none",color:"#fff",fontSize:11,letterSpacing:1,textTransform:"uppercase",cursor:imageUploading?"not-allowed":"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>{imageUploading?"Uploading…":"Upload ↑"}<input type="file" accept="image/*" style={{display:"none"}} disabled={imageUploading} onChange={async e=>{const file=e.target.files[0];if(!file)return;setImageUploading(true);try{const ext=file.name.split(".").pop();const filename=`products/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;const{error:upErr}=await supabase.storage.from("product-images").upload(filename,file,{upsert:true});if(upErr)throw upErr;const{data:urlData}=supabase.storage.from("product-images").getPublicUrl(filename);setForm(p=>({...p,image_url:urlData.publicUrl}));}catch(err){alert("Upload failed: "+err.message);}finally{setImageUploading(false);}}}/></label></div><div className="pf-hint">Paste a URL or upload a file — either works.</div>{form.image_url?.startsWith("http")&&<img src={form.image_url} alt="" style={{marginTop:8,height:72,width:72,objectFit:"cover",border:`0.5px solid ${C.rule}`}}/>}</div></div>
                   </div>
                 </div>
                 <div className="pf-card">
