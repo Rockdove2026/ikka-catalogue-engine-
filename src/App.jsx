@@ -136,7 +136,11 @@ export default function App() {
     setLoading(false);
   }, []);
 
-  useEffect(() => { loadProducts(); loadTagLibrary(); loadProductTags(); }, [loadProducts, loadTagLibrary, loadProductTags]);
+  useEffect(() => {
+    loadProducts(); loadTagLibrary(); loadProductTags();
+    // Silently wake Railway backend on app load to avoid cold-start timeouts
+    fetch(`${CATALOGUE_URL}/health`).catch(()=>{});
+  }, [loadProducts, loadTagLibrary, loadProductTags]);
 
   const interpretQuery = useCallback(async (query) => {
     setKeywordOnly(false);
@@ -359,7 +363,7 @@ export default function App() {
       if (!row.name||!row.price){errors.push("Skipped: missing name or price");continue;}
       const bool=v=>v==="true"||v==="1"||v==="yes";
       const tierVal=row.tier||"Silver"; const p=parseFloat(row.price)||0;
-      const witb = row.whats_in_box ? row.whats_in_box.split(",").map(s=>s.trim()).filter(Boolean) : [];
+      const witb = row.whats_in_box ? row.whats_in_box.split("|").map(s=>s.trim()).filter(Boolean) : [];
       const payload={name:row.name,category:row.category||"",price:p,tier:tierVal,description:row.description||"",occasions:row.occasions||"",image_url:row.image_url||"",edible:bool(row.edible),fragile:bool(row.fragile),customisable:bool(row.customisable!==""?row.customisable:"true"),popularity:parseInt(row.popularity)||50,lead_time:row.lead_time||null,active:true,tagging_status:"untagged",whats_in_box:witb,box_dimensions:row.box_dimensions||null,weight_grams:row.weight_grams?parseInt(row.weight_grams):null,moq:row.moq?parseInt(row.moq):null,stock_quantity:row.stock_quantity?parseInt(row.stock_quantity):100,mto_moq:row.mto_moq?parseInt(row.mto_moq):null,mto_lead_time:row.mto_lead_time||null,keywords:row.keywords||null};
       const {data:ins,error}=await supabase.from("catalog").insert([payload]).select().single();
       if(error){errors.push(row.name+": "+error.message);continue;}
