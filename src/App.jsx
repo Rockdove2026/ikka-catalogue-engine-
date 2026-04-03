@@ -140,7 +140,7 @@ export default function App() {
 
   useEffect(() => {
     loadProducts(); loadTagLibrary(); loadProductTags();
-    fetch(`${CATALOGUE_URL}/health`).catch(()=>{});
+    fetch(CATALOGUE_URL + "/health").catch(()=>{});
   }, [loadProducts, loadTagLibrary, loadProductTags]);
 
   const interpretQuery = useCallback(async (query) => {
@@ -148,7 +148,7 @@ export default function App() {
     if (!query.trim()) { setInterpreted(null); setTagFilter({ intent:"", audience:"", style:"", include_tags:[], exclude_tags:[] }); return; }
     setQueryLoading(true);
     try {
-      const res = await fetch(`${CATALOGUE_URL}/interpret-query`, { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ query }) });
+      const res = await fetch(CATALOGUE_URL + "/interpret-query", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ query }) });
       if (!res.ok) throw new Error("Failed");
       const data = await res.json();
       setInterpreted(data);
@@ -250,12 +250,12 @@ export default function App() {
     if (!sel.length) return;
     setPdfLoading(true); setPdfUrl(null);
     try {
-      const res = await fetch(`${CATALOGUE_URL}/generate-catalogue`, {
+      const res = await fetch(CATALOGUE_URL + "/generate-catalogue", {
         method:"POST", headers:{"Content-Type":"application/json"},
         body: JSON.stringify({
           products: sel.map(p => {
             const f = p._fulfillment || getFulfillmentState(p, qty);
-            return { name:p.name, origin:p.category||"India", category:p.category||"General", price:Math.round(p._price), description:p.description||"", occasions:Array.isArray(p.occasions)?p.occasions:(p.occasions||"").split("|").map(s=>s.trim()).filter(Boolean), lead_time:f.leadTime, moq:f.effectiveMoq===1?"1 unit":`${f.effectiveMoq} units`, customisation:f.customisable?"Available on request":"Not available", images:p.image_url?[p.image_url]:[], whats_in_box:p.whats_in_box||[], box_dimensions:p.box_dimensions||"", weight_grams:p.weight_grams||null, stock_status:f.label };
+            return { name:p.name, origin:p.category||"India", category:p.category||"General", price:Math.round(p._price), description:p.description||"", occasions:Array.isArray(p.occasions)?p.occasions:(p.occasions||"").split("|").map(s=>s.trim()).filter(Boolean), lead_time:f.leadTime, moq:f.effectiveMoq===1?"1 unit":f.effectiveMoq+" units", customisation:f.customisable?"Available on request":"Not available", images:p.image_url?[p.image_url]:[], whats_in_box:p.whats_in_box||[], box_dimensions:p.box_dimensions||"", weight_grams:p.weight_grams||null, stock_status:f.label };
           }),
           meta: { client_name:clientName||"Valued Client", occasion:params.occasion!=="All"?params.occasion:"Corporate Gifting", event_date:"", valid_until:"" },
         }),
@@ -272,12 +272,25 @@ export default function App() {
     finally { setPdfLoading(false); setShowPdfMeta(false); }
   };
 
+  const exportCSV = () => {
+    const headers = ["name","category","tier","price","description","occasions","image_url","whats_in_box","box_dimensions","weight_grams","moq","lead_time","stock_quantity","mto_moq","mto_lead_time","edible","fragile","customisable","popularity","keywords"];
+    const rows = products.map(p => headers.map(h => {
+      const v = h === "whats_in_box" ? (p.whats_in_box||[]).join("|") : (p[h]??"");
+      return '"' + String(v).replace(/"/g, '""') + '"';
+    }));
+    const csv = [headers.join(","), ...rows.map(r => r.join(","))].join("\n");
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([csv], {type:"text/csv"}));
+    a.download = "ikka_dukka_catalogue_" + new Date().toISOString().slice(0,10) + ".csv";
+    a.click();
+  };
+
   const openTagReview = async (product) => {
     setTagProduct(product); setTagSuggestions({}); setTagSelected({}); setTagSearches({}); setCustomTags({}); setNewTags({});
     setTagLoading(true);
     const { data: existingTags } = await supabase.from("product_tags").select("tag, dimension, confidence, human_confirmed").eq("product_id", product.id);
     try {
-      const res = await fetch(`${CATALOGUE_URL}/auto-tag`, { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ product_id:product.id, name:product.name, category:product.category||"", description:product.description||"", tier:product.tier||"", occasions:product.occasions||"", price:product.price }) });
+      const res = await fetch(CATALOGUE_URL + "/auto-tag", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ product_id:product.id, name:product.name, category:product.category||"", description:product.description||"", tier:product.tier||"", occasions:product.occasions||"", price:product.price }) });
       if (!res.ok) throw new Error("Auto-tag failed: "+res.status);
       const data = await res.json();
       const grouped = {};
@@ -365,7 +378,7 @@ export default function App() {
       if(error){errors.push(row.name+": "+error.message);continue;}
       if(ins){
         await supabase.from("pricing_tiers").insert([{product_id:ins.id,min_qty:1,max_qty:99,price_per_unit:p},{product_id:ins.id,min_qty:100,max_qty:199,price_per_unit:p*0.85},{product_id:ins.id,min_qty:200,max_qty:499,price_per_unit:p*0.80},{product_id:ins.id,min_qty:500,max_qty:999,price_per_unit:p*0.70},{product_id:ins.id,min_qty:1000,max_qty:null,price_per_unit:p*0.60}]);
-        fetch(`${CATALOGUE_URL}/auto-tag`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({product_id:ins.id,name:ins.name,category:ins.category||"",description:ins.description||"",tier:ins.tier||"",occasions:ins.occasions||"",price:ins.price})}).then(r=>r.json()).then(async(tagData)=>{if(!tagData.tags?.length)return;const tagRows=tagData.tags.map(t=>({product_id:ins.id,tag:t.tag,dimension:t.dimension,confidence:t.confidence,ai_suggested:true,human_confirmed:false}));await supabase.from("product_tags").insert(tagRows);await supabase.from("catalog").update({tagging_status:tagData.tagging_status,tagging_updated_at:new Date().toISOString()}).eq("id",ins.id);}).catch(()=>{});
+        fetch(CATALOGUE_URL+"/auto-tag",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({product_id:ins.id,name:ins.name,category:ins.category||"",description:ins.description||"",tier:ins.tier||"",occasions:ins.occasions||"",price:ins.price})}).then(r=>r.json()).then(async(tagData)=>{if(!tagData.tags?.length)return;const tagRows=tagData.tags.map(t=>({product_id:ins.id,tag:t.tag,dimension:t.dimension,confidence:t.confidence,ai_suggested:true,human_confirmed:false}));await supabase.from("product_tags").insert(tagRows);await supabase.from("catalog").update({tagging_status:tagData.tagging_status,tagging_updated_at:new Date().toISOString()}).eq("id",ins.id);}).catch(()=>{});
         ok++;
       }
     }
@@ -581,7 +594,7 @@ export default function App() {
         </div>
         <div className="hdr-tabs">
           {[["query","Query"],["admin","Admin"]].map(([k,l])=>(
-            <button key={k} className={`hdr-tab${tab===k?" on":""}`} onClick={()=>setTab(k)}>{l}</button>
+            <button key={k} className={"hdr-tab"+(tab===k?" on":"")} onClick={()=>setTab(k)}>{l}</button>
           ))}
         </div>
       </div>
@@ -591,7 +604,6 @@ export default function App() {
           <div className="sidebar">
             <div className="s-title">Find gifts</div>
             <div className="s-sub">Describe what you need or use the filters below.</div>
-
             <div style={{marginBottom:20}}>
               <div style={{display:"flex",gap:6,alignItems:"center"}}>
                 <input type="text" placeholder="e.g. festive gifts for CXOs..." value={freeQuery} onChange={e=>setFreeQuery(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")interpretQuery(freeQuery);}} style={{flex:1,padding:"9px 10px",background:"#F5F0EA",border:"1px solid #C8B8B0",borderRadius:4,fontSize:14,fontFamily:"'EB Garamond',serif",color:"#1A1614",outline:"none",minWidth:0,display:"block"}}/>
@@ -607,7 +619,6 @@ export default function App() {
                 </div>
               )}
             </div>
-
             <div className="s-section">Budget & Quantity</div>
             <div className="s-field"><label className="s-label">Budget per unit (₹)</label><input className="s-inp" type="number" placeholder="e.g. 3000" value={params.budget} onChange={e=>setParams(p=>({...p,budget:e.target.value}))}/></div>
             <div className="s-field">
@@ -615,11 +626,9 @@ export default function App() {
               <input className="s-inp" type="number" placeholder="e.g. 100" value={params.qty} onChange={e=>setParams(p=>({...p,qty:e.target.value}))}/>
               {params.qty&&parseInt(params.qty)>=100&&<div style={{fontSize:11,color:"#5a8a5a",marginTop:4}}>Volume pricing applies from 100+ units</div>}
             </div>
-
             <div className="s-section">Timeline & Occasion</div>
             <div className="s-field"><label className="s-label">Days until event</label><input className="s-inp" type="number" placeholder="e.g. 21" value={params.days} onChange={e=>setParams(p=>({...p,days:e.target.value}))}/></div>
             <div className="s-field"><label className="s-label">Occasion</label><select className="s-sel" value={params.occasion} onChange={e=>setParams(p=>({...p,occasion:e.target.value}))}>{OCCASIONS.map(o=><option key={o}>{o}</option>)}</select></div>
-
             <div className="s-section">Restrictions</div>
             {[{key:"excludeEdible",label:"Exclude edible items",sub:"No food or beverage products"},{key:"excludeFragile",label:"Exclude fragile items",sub:"Safe for courier / bulk shipping"}].map(r=>(
               <div className="s-toggle" key={r.key}>
@@ -631,7 +640,6 @@ export default function App() {
               <div><div className="s-toggle-lbl">Customisation required</div><div className="s-toggle-sub">Only show made-to-order products</div></div>
               <input type="checkbox" className="s-chk" checked={params.requireCustomisation} onChange={e=>setParams(p=>({...p,requireCustomisation:e.target.checked}))}/>
             </div>
-
             <div className="s-section">Smart Filters</div>
             <div className="s-field"><label className="s-label">Intent</label><select className="s-sel" value={tagFilter.intent} onChange={e=>setTagFilter(prev=>({...prev,intent:e.target.value}))}><option value="">Any intent</option>{intentOptions.map(t=><option key={t} value={t}>{t}</option>)}</select></div>
             <div className="s-field"><label className="s-label">Audience</label><select className="s-sel" value={tagFilter.audience} onChange={e=>setTagFilter(prev=>({...prev,audience:e.target.value}))}><option value="">Any audience</option>{audienceOptions.map(t=><option key={t} value={t}>{t}</option>)}</select></div>
@@ -642,14 +650,12 @@ export default function App() {
               <input className="excl-inp" type="text" placeholder="e.g. leather, alcohol…" value={excludeInput} onChange={e=>setExcludeInput(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"||e.key===","||e.key===" "){e.preventDefault();addExcludeTag(excludeInput);}}}/>
               <div style={{fontSize:10,color:"#8A7A72",marginTop:3}}>Press Enter or comma to add</div>
             </div>
-
             <div className="s-section">Sort Results By</div>
             <select className="s-sel" value={sortBy} onChange={e=>setSortBy(e.target.value)}>
               <option value="score">Best match (AI scored)</option>
               <option value="price_asc">Price low → high</option>
               <option value="price_desc">Price high → low</option>
             </select>
-
             <div style={{marginTop:20,padding:"14px 0",borderTop:"0.5px solid #C8B8B0"}}>
               <div style={{fontSize:10,letterSpacing:2,textTransform:"uppercase",color:"#8A7A72",marginBottom:6}}>Results</div>
               <div style={{fontFamily:"'Playfair Display',serif",fontSize:28,fontWeight:900,color:"#1A1614"}}>{results.length}</div>
@@ -658,7 +664,6 @@ export default function App() {
               {params.requireCustomisation&&<div style={{fontSize:11,color:C.amber,marginTop:4}}>Customisation filter on</div>}
             </div>
           </div>
-
           <div className="main">
             {loading?<div className="loading">Loading catalogue…</div>:(
               <>
@@ -674,10 +679,10 @@ export default function App() {
                       const f=p._fulfillment||getFulfillmentState(p,parseInt(params.qty)||1);
                       const sb=stockBadge(f);
                       return (
-                        <div key={p.id} className={`p-card${isSel?" sel":""}`} onClick={()=>setDetailProduct(p)}>
+                        <div key={p.id} className={"p-card"+(isSel?" sel":"")} onClick={()=>setDetailProduct(p)}>
                           <div className="p-score">{p._score}% match</div>
                           {p._tagBoost>0&&<div className="p-tag-boost">tag match</div>}
-                          <div onClick={e=>{e.stopPropagation();setSelected(prev=>{const n=new Set(prev);n.has(p.id)?n.delete(p.id):n.add(p.id);return n;});}} style={{position:"absolute",top:12,right:12,width:28,height:28,background:isSel?C.ink:"rgba(255,255,255,0.85)",border:`1.5px solid ${isSel?C.ink:C.rule}`,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",zIndex:3,borderRadius:2}}>
+                          <div onClick={e=>{e.stopPropagation();setSelected(prev=>{const n=new Set(prev);n.has(p.id)?n.delete(p.id):n.add(p.id);return n;});}} style={{position:"absolute",top:12,right:12,width:28,height:28,background:isSel?C.ink:"rgba(255,255,255,0.85)",border:"1.5px solid "+(isSel?C.ink:C.rule),display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",zIndex:3,borderRadius:2}}>
                             {isSel&&<svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="2,6 5,9 10,3"/></svg>}
                           </div>
                           <div className="p-img">{p.image_url?.startsWith("http")?<img src={p.image_url} alt={p.name}/>:<div className="p-img-emoji">{p.fb_icon||"🎁"}</div>}</div>
@@ -726,28 +731,23 @@ export default function App() {
           <div className="admin-side">
             <div className="admin-s-title">Admin Panel</div>
             {[["list","All Products"],["add","Add Product"],["csv","Bulk Upload CSV"]].map(([k,l])=>(
-              <button key={k} className={`admin-s-item${adminView===k?" on":""}`} onClick={()=>{setAdminView(k);setEditProduct(null);setForm(emptyForm);}}>{l}</button>
+              <button key={k} className={"admin-s-item"+(adminView===k?" on":"")} onClick={()=>{setAdminView(k);setEditProduct(null);setForm(emptyForm);}}>{l}</button>
             ))}
           </div>
           <div className="admin-main">
-
             {adminView==="list"&&(
               <>
                 <div className="admin-eyebrow">
                   <span>All Products — {products.length} items{adminSearch.trim()&&(" · "+filteredAdminProducts.length+" shown")}</span>
-                  <span style={{fontSize:11,color:C.muted}}>{products.filter(p=>p.tagging_status==="needs_review").length} need review · {products.filter(p=>!p.tagging_status||p.tagging_status==="untagged").length} untagged</span> <button onClick={()=>{const headers=["name","category","tier","price","description","occasions","image_url","whats_in_box","box_dimensions","weight_grams","moq","lead_time","stock_quantity","mto_moq","mto_lead_time","edible","fragile","customisable","popularity","keywords"];const rows=products.map(p=>headers.map(h=>{const v=h==="whats_in_box"?(p.whats_in_box||[]).join("|"):(p[h]??"");return `"${String(v).replace(/"/g,'""')}"`;}));const csv=[headers.join(","),...rows.map(r=>r.join(","))].join("
-");const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([csv],{type:"text/csv"}));a.download="ikka_dukka_catalogue_"+new Date().toISOString().slice(0,10)+".csv";a.click();}} style={{padding:"5px 16px",background:C.ink,border:"none",color:"#fff",fontSize:10,letterSpacing:1.5,textTransform:"uppercase",cursor:"pointer",fontFamily:"inherit"}}>Export CSV ↓</button>
+                  <div style={{display:"flex",alignItems:"center",gap:12}}>
+                    <span style={{fontSize:11,color:C.muted}}>{products.filter(p=>p.tagging_status==="needs_review").length} need review · {products.filter(p=>!p.tagging_status||p.tagging_status==="untagged").length} untagged</span>
+                    <button onClick={exportCSV} style={{padding:"5px 16px",background:C.ink,border:"none",color:"#fff",fontSize:10,letterSpacing:1.5,textTransform:"uppercase",cursor:"pointer",fontFamily:"inherit",flexShrink:0}}>Export CSV ↓</button>
+                  </div>
                 </div>
                 <div style={{marginBottom:16,maxWidth:400}}>
-                  <input
-                    type="text"
-                    placeholder="Search by name or category…"
-                    value={adminSearch}
-                    onChange={e=>setAdminSearch(e.target.value)}
-                    style={{display:"block",width:"100%",padding:"9px 14px",background:"#fff",border:`0.5px solid ${C.rule}`,fontSize:14,fontFamily:"'EB Garamond',serif",color:C.ink,outline:"none"}}
-                  />
+                  <input type="text" placeholder="Search by name or category…" value={adminSearch} onChange={e=>setAdminSearch(e.target.value)} style={{display:"block",width:"100%",padding:"9px 14px",background:"#fff",border:"0.5px solid "+C.rule,fontSize:14,fontFamily:"'EB Garamond',serif",color:C.ink,outline:"none"}}/>
                 </div>
-                <div style={{background:"#fff",border:`0.5px solid ${C.rule}`,overflowX:"auto"}}>
+                <div style={{background:"#fff",border:"0.5px solid "+C.rule,overflowX:"auto"}}>
                   <table className="admin-tbl">
                     <thead><tr>{["Name","Category","Price","Stock","Tier","Tags","Actions"].map((h,i)=><th className="admin-th" key={i}>{h}</th>)}</tr></thead>
                     <tbody>
@@ -764,12 +764,12 @@ export default function App() {
                               <span className="status-badge" style={{background:sb.bg,color:sb.color}}>{f.label}</span>
                               <div style={{fontSize:10,color:C.muted,marginTop:2}}>{p.stock_quantity??100} units</div>
                             </td>
-                            <td className="admin-td"><span style={{fontSize:10,letterSpacing:1,textTransform:"uppercase",padding:"2px 8px",border:`0.5px solid ${TIER_COLOR[p.tier]||C.muted}`,color:TIER_COLOR[p.tier]||C.muted}}>{p.tier}</span></td>
+                            <td className="admin-td"><span style={{fontSize:10,letterSpacing:1,textTransform:"uppercase",padding:"2px 8px",border:"0.5px solid "+(TIER_COLOR[p.tier]||C.muted),color:TIER_COLOR[p.tier]||C.muted}}>{p.tier}</span></td>
                             <td className="admin-td"><span className="status-badge" style={{background:st.bg,color:st.color}}>{st.label}</span></td>
                             <td className="admin-td" style={{display:"flex",gap:6}}>
                               <button className="admin-act" style={{borderColor:C.green,color:C.green}} onClick={()=>openTagReview(p)}>Tag →</button>
                               <button className="admin-act" style={{borderColor:C.cobalt,color:C.cobalt}} onClick={()=>{setEditProduct(p);setForm({name:p.name,category:p.category||"",price:String(p.price),tier:p.tier||"Silver",image_url:p.image_url||"",occasions:p.occasions||"",description:p.description||"",edible:p.edible||false,fragile:p.fragile||false,customisable:p.customisable!==false,popularity:p.popularity||50,whats_in_box:p.whats_in_box||[],box_dimensions:p.box_dimensions||"",weight_grams:p.weight_grams?String(p.weight_grams):"",moq:p.moq?String(p.moq):"",lead_time:p.lead_time||"",stock_quantity:p.stock_quantity!=null?String(p.stock_quantity):"100",mto_moq:p.mto_moq?String(p.mto_moq):"",mto_lead_time:p.mto_lead_time||"",keywords:p.keywords||""});setAdminView("edit");}}>Edit →</button>
-                              <button className="admin-act" style={{borderColor:C.red,color:C.red}} onClick={async()=>{if(window.confirm(`Delete ${p.name}?`)){await supabase.from("product_tags").delete().eq("product_id",p.id);await supabase.from("pricing_tiers").delete().eq("product_id",p.id);await supabase.from("catalog").delete().eq("id",p.id);loadProducts();}}}>Delete</button>
+                              <button className="admin-act" style={{borderColor:C.red,color:C.red}} onClick={async()=>{if(window.confirm("Delete "+p.name+"?")){await supabase.from("product_tags").delete().eq("product_id",p.id);await supabase.from("pricing_tiers").delete().eq("product_id",p.id);await supabase.from("catalog").delete().eq("id",p.id);loadProducts();}}}>Delete</button>
                             </td>
                           </tr>
                         );
@@ -782,7 +782,7 @@ export default function App() {
 
             {(adminView==="add"||adminView==="edit")&&(
               <div className="pf-wrap">
-                <div className="admin-eyebrow">{editProduct?`Editing — ${editProduct.name}`:"Add New Product"}</div>
+                <div className="admin-eyebrow">{editProduct?"Editing — "+editProduct.name:"Add New Product"}</div>
                 <div className="pf-card">
                   <div className="pf-card-head"><div className="pf-card-num">1</div><div className="pf-card-title">Core Details</div></div>
                   <div className="pf-card-body">
@@ -802,14 +802,14 @@ export default function App() {
                       <div className="pf-field"><label className="pf-label">Base Price (₹) <span className="pf-required">*</span></label><input className="pf-inp" type="number" placeholder="e.g. 2500" value={form.price} onChange={e=>setForm(p=>({...p,price:e.target.value}))}/><div className="pf-hint">Volume tiers auto-generated.</div></div>
                       <div className="pf-field"><label className="pf-label">Popularity (0–100)</label><input className="pf-inp" type="number" min="0" max="100" value={form.popularity} onChange={e=>setForm(p=>({...p,popularity:e.target.value}))}/></div>
                     </div>
-                    {form.price&&(<div style={{display:"flex",gap:1,marginTop:4}}>{[["1–99",1],["100–199",0.85],["200–499",0.80],["500–999",0.70],["1000+",0.60]].map(([label,mult])=>(<div key={label} style={{flex:1,background:C.stone,padding:"8px 10px",borderRight:`0.5px solid ${C.rule}`}}><div style={{fontSize:9,color:C.muted,letterSpacing:1,textTransform:"uppercase",marginBottom:3}}>{label}</div><div style={{fontFamily:"'Playfair Display',serif",fontSize:13,fontWeight:700,color:C.ink}}>₹{Math.round(parseFloat(form.price)*mult).toLocaleString("en-IN")}</div></div>))}</div>)}
+                    {form.price&&(<div style={{display:"flex",gap:1,marginTop:4}}>{[["1–99",1],["100–199",0.85],["200–499",0.80],["500–999",0.70],["1000+",0.60]].map(([label,mult])=>(<div key={label} style={{flex:1,background:C.stone,padding:"8px 10px",borderRight:"0.5px solid "+C.rule}}><div style={{fontSize:9,color:C.muted,letterSpacing:1,textTransform:"uppercase",marginBottom:3}}>{label}</div><div style={{fontFamily:"'Playfair Display',serif",fontSize:13,fontWeight:700,color:C.ink}}>₹{Math.round(parseFloat(form.price)*mult).toLocaleString("en-IN")}</div></div>))}</div>)}
                   </div>
                 </div>
                 <div className="pf-card">
                   <div className="pf-card-head"><div className="pf-card-num">3</div><div className="pf-card-title">Availability & Occasions</div></div>
                   <div className="pf-card-body">
                     <div className="pf-row pf-row-1"><div className="pf-field"><label className="pf-label">Occasions</label><input className="pf-inp" type="text" placeholder="e.g. Diwali|Birthday|Thank You" value={form.occasions} onChange={e=>setForm(p=>({...p,occasions:e.target.value}))}/><div className="pf-hint">Separate with | (pipe).</div></div></div>
-                    <div className="pf-row pf-row-1"><div className="pf-field"><label className="pf-label">Image URL or Upload</label><div style={{display:"flex",gap:8,alignItems:"flex-end"}}><input className="pf-inp" type="text" placeholder="https://…" style={{flex:1}} value={form.image_url} onChange={e=>setForm(p=>({...p,image_url:e.target.value}))}/><label style={{flexShrink:0,padding:"6px 14px",background:imageUploading?C.muted:C.ink,border:"none",color:"#fff",fontSize:11,letterSpacing:1,textTransform:"uppercase",cursor:imageUploading?"not-allowed":"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>{imageUploading?"Uploading…":"Upload ↑"}<input type="file" accept="image/*" style={{display:"none"}} disabled={imageUploading} onChange={async e=>{const file=e.target.files[0];if(!file)return;setImageUploading(true);try{const ext=file.name.split(".").pop();const filename=`products/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;const{error:upErr}=await supabase.storage.from("product-images").upload(filename,file,{upsert:true});if(upErr)throw upErr;const{data:urlData}=supabase.storage.from("product-images").getPublicUrl(filename);setForm(p=>({...p,image_url:urlData.publicUrl}));}catch(err){alert("Upload failed: "+err.message);}finally{setImageUploading(false);}}}/></label></div><div className="pf-hint">Paste a URL or upload a file — either works.</div>{form.image_url?.startsWith("http")&&<img src={form.image_url} alt="" style={{marginTop:8,height:72,width:72,objectFit:"cover",border:`0.5px solid ${C.rule}`}}/>}</div></div>
+                    <div className="pf-row pf-row-1"><div className="pf-field"><label className="pf-label">Image URL or Upload</label><div style={{display:"flex",gap:8,alignItems:"flex-end"}}><input className="pf-inp" type="text" placeholder="https://…" style={{flex:1}} value={form.image_url} onChange={e=>setForm(p=>({...p,image_url:e.target.value}))}/><label style={{flexShrink:0,padding:"6px 14px",background:imageUploading?C.muted:C.ink,border:"none",color:"#fff",fontSize:11,letterSpacing:1,textTransform:"uppercase",cursor:imageUploading?"not-allowed":"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>{imageUploading?"Uploading…":"Upload ↑"}<input type="file" accept="image/*" style={{display:"none"}} disabled={imageUploading} onChange={async e=>{const file=e.target.files[0];if(!file)return;setImageUploading(true);try{const ext=file.name.split(".").pop();const filename="products/"+Date.now()+"_"+Math.random().toString(36).slice(2)+"."+ext;const{error:upErr}=await supabase.storage.from("product-images").upload(filename,file,{upsert:true});if(upErr)throw upErr;const{data:urlData}=supabase.storage.from("product-images").getPublicUrl(filename);setForm(p=>({...p,image_url:urlData.publicUrl}));}catch(err){alert("Upload failed: "+err.message);}finally{setImageUploading(false);}}}/></label></div><div className="pf-hint">Paste a URL or upload a file — either works.</div>{form.image_url?.startsWith("http")&&<img src={form.image_url} alt="" style={{marginTop:8,height:72,width:72,objectFit:"cover",border:"0.5px solid "+C.rule}}/>}</div></div>
                   </div>
                 </div>
                 <div className="pf-card">
@@ -857,9 +857,9 @@ export default function App() {
                       <div className="pf-field"><label className="pf-label">MTO lead time</label><input className="pf-inp" type="text" placeholder="e.g. 4–6 weeks" value={form.mto_lead_time} onChange={e=>setForm(p=>({...p,mto_lead_time:e.target.value}))}/><div className="pf-hint">When stock = 0.</div></div>
                     </div>
                     {form.stock_quantity!==''&&(
-                      <div style={{marginTop:4,padding:"10px 14px",background:C.stone,borderLeft:`2px solid ${C.rule}`,fontSize:12,color:C.muted}}>
+                      <div style={{marginTop:4,padding:"10px 14px",background:C.stone,borderLeft:"2px solid "+C.rule,fontSize:12,color:C.muted}}>
                         <strong style={{color:C.ink}}>State: </strong>
-                        {parseInt(form.stock_quantity)>=10?`In stock — MOQ 1, lead time: ${form.lead_time||"2–3 working days"}, no customisation`:parseInt(form.stock_quantity)>0?`Low stock (${form.stock_quantity} units)`:`Made to order — MOQ ${form.mto_moq||"?"}, lead time: ${form.mto_lead_time||"?"}, customisation available`}
+                        {parseInt(form.stock_quantity)>=10?"In stock — MOQ 1, lead time: "+(form.lead_time||"2–3 working days")+", no customisation":parseInt(form.stock_quantity)>0?"Low stock ("+form.stock_quantity+" units)":"Made to order — MOQ "+(form.mto_moq||"?")+", lead time: "+(form.mto_lead_time||"?")+", customisation available"}
                       </div>
                     )}
                   </div>
@@ -875,7 +875,7 @@ export default function App() {
               <>
                 <div className="admin-eyebrow">Bulk Upload — CSV</div>
                 <div style={{maxWidth:640}}>
-                  <div style={{background:"#fff",border:`0.5px solid ${C.rule}`,padding:"20px 24px",marginBottom:16}}>
+                  <div style={{background:"#fff",border:"0.5px solid "+C.rule,padding:"20px 24px",marginBottom:16}}>
                     <div style={{fontFamily:"'Playfair Display',serif",fontSize:14,fontWeight:700,color:C.ink,marginBottom:6}}>CSV Format</div>
                     <div style={{fontFamily:"'EB Garamond',serif",fontSize:13,color:C.muted,lineHeight:1.7,marginBottom:12}}>
                       Required: <strong>name, price</strong><br/>
@@ -883,9 +883,9 @@ export default function App() {
                     </div>
                     <a href="/product_upload_template.csv" download style={{fontFamily:"'EB Garamond',serif",fontSize:12,letterSpacing:1.5,textTransform:"uppercase",color:C.cobalt}}>Download template →</a>
                   </div>
-                  <div style={{marginBottom:20}}><label className="f-label">Select CSV file</label><input type="file" accept=".csv" onChange={handleCSVFile} style={{display:"block",width:"100%",padding:"8px 0",fontFamily:"'EB Garamond',serif",fontSize:14,color:C.ink,borderBottom:`1px solid ${C.rule}`,background:"transparent",outline:"none",cursor:"pointer"}}/></div>
-                  {csvRows.length>0&&(<div style={{marginBottom:20}}><div style={{fontFamily:"'EB Garamond',serif",fontSize:13,color:C.muted,marginBottom:10}}>{csvRows.length} rows ready · AI will auto-tag after upload</div><button onClick={uploadCSV} disabled={csvUploading} className="f-save">{csvUploading?`Uploading…`:`Upload ${csvRows.length} Products →`}</button></div>)}
-                  {csvStatus&&(<div style={{padding:16,background:csvStatus.errors.length===0?"#f0f8f0":"#fff8f0",border:`0.5px solid ${csvStatus.errors.length===0?C.green:C.amber}`}}><div style={{fontFamily:"'Playfair Display',serif",fontSize:15,fontWeight:700,color:csvStatus.errors.length===0?C.green:C.amber,marginBottom:6}}>{csvStatus.ok} product{csvStatus.ok!==1?"s":""} uploaded</div>{csvStatus.errors.map((e,i)=><div key={i} style={{fontSize:12,color:C.red}}>{e}</div>)}</div>)}
+                  <div style={{marginBottom:20}}><label className="f-label">Select CSV file</label><input type="file" accept=".csv" onChange={handleCSVFile} style={{display:"block",width:"100%",padding:"8px 0",fontFamily:"'EB Garamond',serif",fontSize:14,color:C.ink,borderBottom:"1px solid "+C.rule,background:"transparent",outline:"none",cursor:"pointer"}}/></div>
+                  {csvRows.length>0&&(<div style={{marginBottom:20}}><div style={{fontFamily:"'EB Garamond',serif",fontSize:13,color:C.muted,marginBottom:10}}>{csvRows.length} rows ready · AI will auto-tag after upload</div><button onClick={uploadCSV} disabled={csvUploading} className="f-save">{csvUploading?"Uploading…":"Upload "+csvRows.length+" Products →"}</button></div>)}
+                  {csvStatus&&(<div style={{padding:16,background:csvStatus.errors.length===0?"#f0f8f0":"#fff8f0",border:"0.5px solid "+(csvStatus.errors.length===0?C.green:C.amber)}}><div style={{fontFamily:"'Playfair Display',serif",fontSize:15,fontWeight:700,color:csvStatus.errors.length===0?C.green:C.amber,marginBottom:6}}>{csvStatus.ok} product{csvStatus.ok!==1?"s":""} uploaded</div>{csvStatus.errors.map((e,i)=><div key={i} style={{fontSize:12,color:C.red}}>{e}</div>)}</div>)}
                 </div>
               </>
             )}
@@ -936,7 +936,7 @@ export default function App() {
                   <div style={{fontSize:9,letterSpacing:2,textTransform:"uppercase",color:"#888",marginBottom:6}}>{detailProduct.category}</div>
                   <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:24,color:"#fff",fontWeight:300,lineHeight:1.2,marginBottom:6}}>{detailProduct.name}</div>
                   <div style={{display:"flex",gap:8,alignItems:"center"}}>
-                    <span style={{fontSize:9,letterSpacing:1,textTransform:"uppercase",padding:"2px 8px",border:`0.5px solid ${TIER_COLOR[detailProduct.tier]||C.muted}`,color:TIER_COLOR[detailProduct.tier]||C.muted}}>{detailProduct.tier}</span>
+                    <span style={{fontSize:9,letterSpacing:1,textTransform:"uppercase",padding:"2px 8px",border:"0.5px solid "+(TIER_COLOR[detailProduct.tier]||C.muted),color:TIER_COLOR[detailProduct.tier]||C.muted}}>{detailProduct.tier}</span>
                     {(()=>{const f=getFulfillmentState(detailProduct,parseInt(params.qty)||1);const sb=stockBadge(f);return <span style={{fontSize:9,letterSpacing:1,textTransform:"uppercase",padding:"3px 9px",borderRadius:99,background:sb.bg,color:sb.color,fontWeight:700}}>{f.label}</span>;})()}
                   </div>
                 </div>
@@ -952,7 +952,7 @@ export default function App() {
                   <div style={{fontSize:9,letterSpacing:2,textTransform:"uppercase",color:C.muted,marginBottom:8}}>Pricing</div>
                   <div style={{display:"flex",gap:1}}>
                     {[["1–99",1],["100–199",0.85],["200–499",0.80],["500–999",0.70],["1000+",0.60]].map(([label,mult])=>(
-                      <div key={label} style={{flex:1,background:"#fff",padding:"8px 10px",borderRight:`0.5px solid ${C.rule}`,textAlign:"center"}}>
+                      <div key={label} style={{flex:1,background:"#fff",padding:"8px 10px",borderRight:"0.5px solid "+C.rule,textAlign:"center"}}>
                         <div style={{fontSize:9,color:C.muted,letterSpacing:1,textTransform:"uppercase",marginBottom:3}}>{label}</div>
                         <div style={{fontFamily:"'Playfair Display',serif",fontSize:13,fontWeight:700,color:C.ink}}>₹{Math.round(parseFloat(detailProduct.price)*mult).toLocaleString("en-IN")}</div>
                       </div>
@@ -982,7 +982,7 @@ export default function App() {
                     <div style={{fontSize:9,letterSpacing:2,textTransform:"uppercase",color:C.muted,marginBottom:8}}>Occasions</div>
                     <div style={{display:"flex",flexWrap:"wrap",gap:5}}>
                       {detailProduct.occasions.split("|").map(o=>o.trim()).filter(Boolean).map(o=>(
-                        <span key={o} style={{fontSize:11,padding:"3px 10px",background:"#fff",border:`0.5px solid ${C.rule}`,color:C.ink}}>{o}</span>
+                        <span key={o} style={{fontSize:11,padding:"3px 10px",background:"#fff",border:"0.5px solid "+C.rule,color:C.ink}}>{o}</span>
                       ))}
                     </div>
                   </div>
@@ -992,9 +992,9 @@ export default function App() {
                   <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:1}}>
                     {[
                       ["Lead time", (()=>{const f=getFulfillmentState(detailProduct,parseInt(params.qty)||1);return f.leadTime;})()],
-                      ["Min. order", (()=>{const f=getFulfillmentState(detailProduct,parseInt(params.qty)||1);return f.effectiveMoq===1?"1 unit":`${f.effectiveMoq} units`;})()],
+                      ["Min. order", (()=>{const f=getFulfillmentState(detailProduct,parseInt(params.qty)||1);return f.effectiveMoq===1?"1 unit":f.effectiveMoq+" units";})()],
                       detailProduct.box_dimensions&&["Box dimensions", detailProduct.box_dimensions],
-                      detailProduct.weight_grams&&["Weight", `${detailProduct.weight_grams}g`],
+                      detailProduct.weight_grams&&["Weight", detailProduct.weight_grams+"g"],
                     ].filter(Boolean).map(([label,val])=>(
                       <div key={label} style={{background:"#fff",padding:"10px 14px"}}>
                         <div style={{fontSize:9,letterSpacing:1.5,textTransform:"uppercase",color:C.muted,marginBottom:3}}>{label}</div>
@@ -1019,17 +1019,17 @@ export default function App() {
                     <div style={{fontSize:9,letterSpacing:2,textTransform:"uppercase",color:C.muted,marginBottom:8}}>Tags</div>
                     <div style={{display:"flex",flexWrap:"wrap",gap:5}}>
                       {productTagMap[detailProduct.id].map(({tag,dimension,human_confirmed})=>(
-                        <span key={tag} style={{fontSize:10,padding:"3px 9px",borderRadius:99,background:human_confirmed?"#E1F5EE":"#F1EFE8",border:`0.5px solid ${human_confirmed?"#1D9E75":C.rule}`,color:human_confirmed?"#085041":C.muted}}>{tag}</span>
+                        <span key={tag} style={{fontSize:10,padding:"3px 9px",borderRadius:99,background:human_confirmed?"#E1F5EE":"#F1EFE8",border:"0.5px solid "+(human_confirmed?"#1D9E75":C.rule),color:human_confirmed?"#085041":C.muted}}>{tag}</span>
                       ))}
                     </div>
                   </div>
                 )}
               </div>
             </div>
-            <div style={{background:"#fff",borderTop:`0.5px solid ${C.rule}`,padding:"16px 28px",display:"flex",justifyContent:"space-between",alignItems:"center",flexShrink:0}}>
+            <div style={{background:"#fff",borderTop:"0.5px solid "+C.rule,padding:"16px 28px",display:"flex",justifyContent:"space-between",alignItems:"center",flexShrink:0}}>
               <div style={{fontFamily:"'Playfair Display',serif",fontSize:22,fontWeight:900,color:C.ink}}>₹{parseFloat(detailProduct.price).toLocaleString("en-IN")}</div>
               <div style={{display:"flex",gap:8}}>
-                <button onClick={()=>{openTagReview(detailProduct);setDetailProduct(null);}} style={{padding:"9px 16px",border:`0.5px solid ${C.green}`,background:"transparent",color:C.green,fontSize:10,letterSpacing:1.5,textTransform:"uppercase",cursor:"pointer"}}>Tag →</button>
+                <button onClick={()=>{openTagReview(detailProduct);setDetailProduct(null);}} style={{padding:"9px 16px",border:"0.5px solid "+C.green,background:"transparent",color:C.green,fontSize:10,letterSpacing:1.5,textTransform:"uppercase",cursor:"pointer"}}>Tag →</button>
                 <button onClick={()=>{setSelected(prev=>{const n=new Set(prev);n.has(detailProduct.id)?n.delete(detailProduct.id):n.add(detailProduct.id);return n;});setDetailProduct(null);}} style={{padding:"9px 20px",background:selected.has(detailProduct.id)?C.red:C.ink,border:"none",color:"#fff",fontSize:10,letterSpacing:1.5,textTransform:"uppercase",cursor:"pointer"}}>
                   {selected.has(detailProduct.id)?"Remove from selection":"Add to selection"}
                 </button>
@@ -1065,8 +1065,8 @@ export default function App() {
                       <div className="tag-dim-card" key={key}>
                         <div className="tag-dim-head"><div className="tag-dim-label">{label}</div>{required&&<span className="tag-dim-req">required</span>}<span className="tag-dim-count">{selSet.size} selected</span></div>
                         <div className="tag-dim-body">
-                          {suggestions.map(({tag,confidence})=>{const isSel=selSet.has(tag);return <span key={tag} className={`tag-chip${isSel?" sel":""}`} onClick={()=>toggleTag(key,tag)}>{tag}<span className={`tag-cf${isSel?"":" "+cfClass(confidence)}`}>{confidence}%</span></span>;})}
-                          {extra.map(tag=><span key={tag} className={`tag-chip new-t${selSet.has(tag)?" sel":""}`} onClick={()=>toggleTag(key,tag)}>{tag}<span className="tag-new-badge">new</span></span>)}
+                          {suggestions.map(({tag,confidence})=>{const isSel=selSet.has(tag);return <span key={tag} className={"tag-chip"+(isSel?" sel":"")} onClick={()=>toggleTag(key,tag)}>{tag}<span className={"tag-cf"+(isSel?"":" "+cfClass(confidence))}>{confidence}%</span></span>;})}
+                          {extra.map(tag=><span key={tag} className={"tag-chip new-t"+(selSet.has(tag)?" sel":"")} onClick={()=>toggleTag(key,tag)}>{tag}<span className="tag-new-badge">new</span></span>)}
                           {extraSel.map(tag=><span key={tag} className="tag-chip sel" onClick={()=>toggleTag(key,tag)}>{tag}</span>)}
                         </div>
                         <div className="tag-search-row" style={{position:"relative"}}>
@@ -1082,7 +1082,7 @@ export default function App() {
             <div className="tag-panel-foot">
               <div style={{fontSize:13,color:C.muted}}>{newTagCount>0&&<span>{newTagCount} new tag{newTagCount>1?"s":""} added · </span>}{totalTagSelected} tags · {Object.values(tagSelected).filter(s=>s.size>0).length} dimensions</div>
               <div style={{display:"flex",gap:8}}>
-                <button onClick={()=>setTagProduct(null)} style={{padding:"10px 18px",border:`0.5px solid ${C.rule}`,background:"transparent",color:C.muted,fontSize:11,letterSpacing:2,textTransform:"uppercase",cursor:"pointer"}}>Cancel</button>
+                <button onClick={()=>setTagProduct(null)} style={{padding:"10px 18px",border:"0.5px solid "+C.rule,background:"transparent",color:C.muted,fontSize:11,letterSpacing:2,textTransform:"uppercase",cursor:"pointer"}}>Cancel</button>
                 <button onClick={saveTags} disabled={tagSaving} style={{padding:"10px 24px",background:"#0F6E56",border:"none",color:"#fff",fontSize:11,letterSpacing:2,textTransform:"uppercase",cursor:tagSaving?"not-allowed":"pointer",opacity:tagSaving?0.7:1}}>{tagSaving?"Saving…":"Confirm & save →"}</button>
               </div>
             </div>
@@ -1098,10 +1098,8 @@ function PreviewOverlay({ selectedProducts, selected, setSelected, params, total
   const qty = parseInt(params.qty) || 1;
   const activeProducts = selectedProducts.filter(p => selected.has(p.id));
   const activeTotal = activeProducts.reduce((s,p) => s + p._price * qty, 0);
-
   const removeProduct = (id) => { setSelected(prev => { const n = new Set(prev); n.delete(id); return n; }); };
   const addProduct = (id) => { setSelected(prev => { const n = new Set(prev); n.add(id); return n; }); };
-
   const notSelected = (allProducts || []).filter(p => !selected.has(p.id));
   const addResults = addSearch.trim().length > 0
     ? notSelected.filter(p => p.name.toLowerCase().includes(addSearch.toLowerCase()) || (p.category||"").toLowerCase().includes(addSearch.toLowerCase()))
@@ -1129,7 +1127,7 @@ function PreviewOverlay({ selectedProducts, selected, setSelected, params, total
         {selectedProducts.map(p => {
           const isActive = selected.has(p.id);
           return (
-            <div key={p.id} className={`prev-card${isActive ? "" : " prev-card-removed"}`}>
+            <div key={p.id} className={"prev-card"+(isActive ? "" : " prev-card-removed")}>
               <div className="prev-img">
                 {p.image_url?.startsWith("http") ? <img src={p.image_url} alt={p.name}/> : <div className="prev-img-emoji">{p.fb_icon || "🎁"}</div>}
                 <div className="prev-tier-badge">{p.tier}</div>
@@ -1148,21 +1146,21 @@ function PreviewOverlay({ selectedProducts, selected, setSelected, params, total
         })}
       </div>
       <div style={{maxWidth:1280,margin:"0 auto",width:"100%",padding:"40px 40px 0"}}>
-        <div style={{fontSize:11,letterSpacing:2.5,textTransform:"uppercase",color:C.ink,fontWeight:700,paddingBottom:10,borderBottom:`1.5px solid ${C.ink}`,marginBottom:20,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+        <div style={{fontSize:11,letterSpacing:2.5,textTransform:"uppercase",color:C.ink,fontWeight:700,paddingBottom:10,borderBottom:"1.5px solid "+C.ink,marginBottom:20,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
           <span>Add more products</span>
           <span style={{fontSize:10,color:C.muted,fontWeight:400,letterSpacing:1}}>{notSelected.length} not in catalogue</span>
         </div>
         <div style={{marginBottom:16,maxWidth:400}}>
-          <input type="text" placeholder="Search by name or category…" value={addSearch} onChange={e=>setAddSearch(e.target.value)} style={{display:"block",width:"100%",padding:"9px 12px",background:"#F5F0EA",border:`1px solid ${C.rule}`,fontSize:14,fontFamily:"'EB Garamond',serif",color:C.ink,outline:"none",borderRadius:3}}/>
+          <input type="text" placeholder="Search by name or category…" value={addSearch} onChange={e=>setAddSearch(e.target.value)} style={{display:"block",width:"100%",padding:"9px 12px",background:"#F5F0EA",border:"1px solid "+C.rule,fontSize:14,fontFamily:"'EB Garamond',serif",color:C.ink,outline:"none",borderRadius:3}}/>
         </div>
-        <div style={{background:"#fff",border:`0.5px solid ${C.rule}`,maxHeight:320,overflowY:"auto"}}>
+        <div style={{background:"#fff",border:"0.5px solid "+C.rule,maxHeight:320,overflowY:"auto"}}>
           {addResults.length === 0 ? (
             <div style={{padding:"20px 16px",fontSize:13,color:C.muted,fontStyle:"italic"}}>No products found</div>
           ) : addResults.map((p, i) => {
             const tierC = TIER_COLOR[p.tier] || C.muted;
             const price = p._price || parseFloat(p.price) || 0;
             return (
-              <div key={p.id} style={{display:"flex",alignItems:"center",gap:14,padding:"10px 16px",borderBottom:i<addResults.length-1?`0.5px solid ${C.rule}`:"none",cursor:"pointer"}}
+              <div key={p.id} style={{display:"flex",alignItems:"center",gap:14,padding:"10px 16px",borderBottom:i<addResults.length-1?"0.5px solid "+C.rule:"none",cursor:"pointer"}}
                 onMouseEnter={e=>e.currentTarget.style.background="#F9F5F0"}
                 onMouseLeave={e=>e.currentTarget.style.background="#fff"}
                 onClick={()=>addProduct(p.id)}>
@@ -1173,7 +1171,7 @@ function PreviewOverlay({ selectedProducts, selected, setSelected, params, total
                   <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:15,color:C.ink,lineHeight:1.2,marginBottom:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.name}</div>
                   <div style={{fontSize:10,letterSpacing:1.5,textTransform:"uppercase",color:C.muted}}>{p.category}</div>
                 </div>
-                <span style={{fontSize:9,letterSpacing:1,textTransform:"uppercase",padding:"2px 8px",border:`0.5px solid ${tierC}`,color:tierC,flexShrink:0}}>{p.tier}</span>
+                <span style={{fontSize:9,letterSpacing:1,textTransform:"uppercase",padding:"2px 8px",border:"0.5px solid "+tierC,color:tierC,flexShrink:0}}>{p.tier}</span>
                 <div style={{fontFamily:"'Playfair Display',serif",fontSize:15,fontWeight:700,color:C.ink,flexShrink:0,minWidth:80,textAlign:"right"}}>₹{price.toLocaleString("en-IN")}</div>
                 <button style={{flexShrink:0,padding:"5px 14px",background:C.ink,border:"none",color:"#fff",fontSize:10,letterSpacing:1.5,textTransform:"uppercase",cursor:"pointer",fontFamily:"inherit"}}>+ Add</button>
               </div>
@@ -1181,7 +1179,7 @@ function PreviewOverlay({ selectedProducts, selected, setSelected, params, total
           })}
         </div>
       </div>
-      <div style={{maxWidth:1280,margin:"0 auto",width:"100%",padding:"32px 40px 48px",display:"flex",justifyContent:"space-between",alignItems:"flex-end",borderTop:`1.5px solid ${C.ink}`,marginTop:40}}>
+      <div style={{maxWidth:1280,margin:"0 auto",width:"100%",padding:"32px 40px 48px",display:"flex",justifyContent:"space-between",alignItems:"flex-end",borderTop:"1.5px solid "+C.ink,marginTop:40}}>
         <div>
           <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:18,color:C.ink,marginBottom:4}}>Ikka Dukka Studio Private Limited</div>
           <div style={{fontSize:11,color:C.muted}}>www.ikkadukka.com · hello@ikkadukka.com</div>
