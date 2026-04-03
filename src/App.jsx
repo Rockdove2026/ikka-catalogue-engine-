@@ -300,6 +300,18 @@ export default function App() {
     setTagProduct(product); setTagSuggestions({}); setTagSelected({}); setTagSearches({}); setCustomTags({}); setNewTags({});
     setTagLoading(true);
     const { data: existingTags } = await supabase.from("product_tags").select("tag, dimension, confidence, human_confirmed").eq("product_id", product.id);
+    if (existingTags && existingTags.length > 0) {
+  const grouped = {};
+  existingTags.forEach(({tag, dimension, confidence}) => { if (!grouped[dimension]) grouped[dimension]=[]; grouped[dimension].push({tag, confidence}); });
+  setTagSuggestions(grouped);
+  const initSelected = {};
+  DIMENSIONS.forEach(d => { initSelected[d.key] = new Set(); });
+  existingTags.filter(t=>t.human_confirmed).forEach(({tag,dimension}) => { if (initSelected[dimension]) initSelected[dimension].add(tag); });
+  existingTags.filter(t=>!t.human_confirmed && t.confidence>=70).forEach(({tag,dimension}) => { if (initSelected[dimension]) initSelected[dimension].add(tag); });
+  setTagSelected(initSelected);
+  setTagLoading(false);
+  return;
+}
     try {
       const res = await fetch(CATALOGUE_URL + "/auto-tag", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ product_id:product.id, name:product.name, category:product.category||"", description:product.description||"", tier:product.tier||"", occasions:product.occasions||"", price:product.price }) });
       if (!res.ok) throw new Error("Auto-tag failed: "+res.status);
