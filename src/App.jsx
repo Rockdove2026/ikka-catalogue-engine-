@@ -218,6 +218,15 @@ export default function App() {
       }
       const fulfillment = getFulfillmentState(p, qty);
       if (params.requireCustomisation && !fulfillment.customisable) return false;
+      if (params.days && parseInt(params.days) > 0) {
+  const days = parseInt(params.days);
+  const lt = (fulfillment.leadTime || "").toLowerCase();
+  if (days < 1) return false;
+  if (days < 3 && fulfillment.state !== "in_stock") return false;
+  if (days < 7 && (lt.includes("week") || lt.includes("30") || lt.includes("45"))) return false;
+  if (days < 14 && (lt.includes("30") || lt.includes("45") || lt.includes("4-6") || lt.includes("3-4 week"))) return false;
+  if (days < 30 && (lt.includes("45") || lt.includes("60"))) return false;
+}
       if (freeQuery.trim()) {
         const kScore = keywordScore(p, freeQuery);
         const tScore = hasTagFilters ? tagScore(p.id) : 0;
