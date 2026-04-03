@@ -103,10 +103,12 @@ export default function App() {
   const [saving, setSaving] = useState(false);
   const emptyForm = { name:"", category:"", price:"", tier:"Silver", image_url:"", occasions:"", description:"", edible:false, fragile:false, customisable:true, popularity:50, whats_in_box:[], box_dimensions:"", weight_grams:"", moq:"", lead_time:"", stock_quantity:"100", mto_moq:"", mto_lead_time:"", keywords:"" };
   const [form, setForm] = useState(emptyForm);
-  const [boxItemInput, setBoxItemInput] = useState(""); const [imageUploading, setImageUploading] = useState(false);
+  const [boxItemInput, setBoxItemInput] = useState("");
+  const [imageUploading, setImageUploading] = useState(false);
   const [csvRows, setCsvRows] = useState([]);
   const [csvUploading, setCsvUploading] = useState(false);
   const [csvStatus, setCsvStatus] = useState(null);
+  const [adminSearch, setAdminSearch] = useState("");
   const [tagProduct, setTagProduct] = useState(null);
   const [tagLoading, setTagLoading] = useState(false);
   const [tagSuggestions, setTagSuggestions] = useState({});
@@ -138,7 +140,6 @@ export default function App() {
 
   useEffect(() => {
     loadProducts(); loadTagLibrary(); loadProductTags();
-    // Silently wake Railway backend on app load to avoid cold-start timeouts
     fetch(`${CATALOGUE_URL}/health`).catch(()=>{});
   }, [loadProducts, loadTagLibrary, loadProductTags]);
 
@@ -166,7 +167,6 @@ export default function App() {
     const tagSet = new Set(pTags.map(t => t.tag));
     for (const ex of tagFilter.exclude_tags) { if (tagSet.has(ex)) return -1; }
     let boost = 0;
-    // Boost by confidence: human_confirmed full weight, AI-suggested weighted by confidence
     const getTagBoost = (tag, base) => {
       const t = pTags.find(x => x.tag === tag);
       if (!t) return 0;
@@ -180,7 +180,6 @@ export default function App() {
     return boost;
   }, [productTagMap, tagFilter]);
 
-  // ── Intelligent keyword search across ALL product fields ──
   const keywordScore = useCallback((p, query) => {
     if (!query.trim()) return 0;
     const words = query.toLowerCase().split(/\s+/).filter(w => w.length > 1);
@@ -194,7 +193,6 @@ export default function App() {
     };
     let score = 0;
     for (const word of words) {
-      // \b word boundary so "tea" matches "teas" and "tea" but NOT "tealight"
       const re = new RegExp("\\b" + word, "i");
       for (const [, {text, weight}] of Object.entries(fields)) {
         if (re.test(text)) score += 10 * weight;
@@ -213,7 +211,6 @@ export default function App() {
       if (params.excludeFragile && p.fragile) return false;
       const price = priceAtQty(p.pricing_tiers, qty);
       if (budget < Infinity && price > budget * 1.1) return false;
-      // Only hard-exclude on explicit exclude_tags
       if (tagFilter.exclude_tags.length > 0) {
         const pTags = productTagMap[p.id] || [];
         const tagSet = new Set(pTags.map(t => t.tag));
@@ -221,7 +218,6 @@ export default function App() {
       }
       const fulfillment = getFulfillmentState(p, qty);
       if (params.requireCustomisation && !fulfillment.customisable) return false;
-      // When a search query is active, only show products with a relevance signal
       if (freeQuery.trim()) {
         const kScore = keywordScore(p, freeQuery);
         const tScore = hasTagFilters ? tagScore(p.id) : 0;
@@ -391,6 +387,12 @@ export default function App() {
     return { bg:"#F1EFE8", color:"#5F5E5A" };
   };
 
+  const filteredAdminProducts = products.filter(p =>
+    !adminSearch.trim() ||
+    p.name.toLowerCase().includes(adminSearch.toLowerCase()) ||
+    (p.category||"").toLowerCase().includes(adminSearch.toLowerCase())
+  );
+
   return (
     <>
       <style>{`
@@ -551,7 +553,6 @@ export default function App() {
         .prev-count{font-size:9px;letterSpacing:2px;text-transform:uppercase;color:#888;margin-bottom:2px;}
         .prev-total{font-family:'Playfair Display',serif;font-size:20px;color:#fff;}
         .prev-gst{font-size:10px;color:#666;}
-        .prev-hint{font-size:11px;color:#888;margin-top:2px;font-style:italic;}
         .prev-close{background:transparent;border:1px solid #444;color:#fff;font-size:10px;letter-spacing:2px;text-transform:uppercase;cursor:pointer;font-family:inherit;padding:8px 16px;flex-shrink:0;}
         .prev-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:2px;background:${C.rule};padding:40px;max-width:1280px;margin:0 auto;width:100%;}
         .prev-card{background:#fff;position:relative;overflow:hidden;}
@@ -569,13 +570,6 @@ export default function App() {
         .prev-price-row{display:flex;justify-content:space-between;align-items:baseline;border-top:0.5px solid ${C.rule};padding-top:10px;}
         .prev-price{font-family:'Playfair Display',serif;font-size:20px;font-weight:900;color:${C.ink};}
         .prev-per{font-size:11px;color:${C.muted};}
-        .prev-footer{max-width:1280px;margin:0 auto;width:100%;padding:32px 40px 48px;display:flex;justify-content:space-between;align-items:flex-end;border-top:1.5px solid ${C.ink};margin-top:2px;}
-        .prev-brand{font-family:'Cormorant Garamond',serif;font-size:18px;color:${C.ink};margin-bottom:4px;}
-        .prev-contact{font-size:11px;color:${C.muted};}
-        .prev-total-block{text-align:right;}
-        .prev-total-label{font-size:9px;letter-spacing:2px;text-transform:uppercase;color:${C.muted};margin-bottom:4px;}
-        .prev-total-num{font-family:'Playfair Display',serif;font-size:30px;font-weight:900;color:${C.ink};}
-        .prev-total-sub{font-size:11px;color:${C.muted};}
         .prev-generate{background:${C.ink};color:#fff;border:none;padding:10px 28px;font-size:11px;letter-spacing:2px;text-transform:uppercase;cursor:pointer;font-family:inherit;flex-shrink:0;}
         .prev-generate:disabled{opacity:0.6;cursor:not-allowed;}
       `}</style>
@@ -740,14 +734,23 @@ export default function App() {
             {adminView==="list"&&(
               <>
                 <div className="admin-eyebrow">
-                  <span>All Products — {products.length} items</span>
+                  <span>All Products — {products.length} items{adminSearch.trim()&&` · ${filteredAdminProducts.length} shown`}</span>
                   <span style={{fontSize:11,color:C.muted}}>{products.filter(p=>p.tagging_status==="needs_review").length} need review · {products.filter(p=>!p.tagging_status||p.tagging_status==="untagged").length} untagged</span>
+                </div>
+                <div style={{marginBottom:16,maxWidth:400}}>
+                  <input
+                    type="text"
+                    placeholder="Search by name or category…"
+                    value={adminSearch}
+                    onChange={e=>setAdminSearch(e.target.value)}
+                    style={{display:"block",width:"100%",padding:"9px 14px",background:"#fff",border:`0.5px solid ${C.rule}`,fontSize:14,fontFamily:"'EB Garamond',serif",color:C.ink,outline:"none"}}
+                  />
                 </div>
                 <div style={{background:"#fff",border:`0.5px solid ${C.rule}`,overflowX:"auto"}}>
                   <table className="admin-tbl">
                     <thead><tr>{["Name","Category","Price","Stock","Tier","Tags","Actions"].map((h,i)=><th className="admin-th" key={i}>{h}</th>)}</tr></thead>
                     <tbody>
-                      {products.map(p=>{
+                      {filteredAdminProducts.map(p=>{
                         const st=STATUS_STYLE[p.tagging_status]||STATUS_STYLE.untagged;
                         const f=getFulfillmentState(p,1);
                         const sb=stockBadge(f);
@@ -923,11 +926,9 @@ export default function App() {
         />
       )}
 
-      {/* ── Product Detail Panel ── */}
       {detailProduct&&(
         <div style={{position:"fixed",inset:0,background:"rgba(26,22,20,0.6)",zIndex:300,display:"flex",alignItems:"stretch",justifyContent:"flex-end"}} onClick={()=>setDetailProduct(null)}>
           <div style={{background:C.stone,width:"min(440px,100vw)",display:"flex",flexDirection:"column",overflow:"hidden"}} onClick={e=>e.stopPropagation()}>
-            {/* Header */}
             <div style={{background:C.sidebar,padding:"20px 28px",flexShrink:0}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
                 <div style={{flex:1,paddingRight:16}}>
@@ -941,16 +942,11 @@ export default function App() {
                 <button onClick={()=>setDetailProduct(null)} style={{background:"transparent",border:"none",color:"#888",fontSize:22,cursor:"pointer",lineHeight:1,flexShrink:0}}>×</button>
               </div>
             </div>
-
-            {/* Body */}
             <div style={{flex:1,overflowY:"auto",padding:"0 0 32px"}}>
-              {/* Image */}
               {detailProduct.image_url?.startsWith("http")&&(
                 <img src={detailProduct.image_url} alt={detailProduct.name} style={{width:"100%",display:"block",maxHeight:380,objectFit:"contain",background:C.warm}}/>
               )}
-
               <div style={{padding:"24px 28px"}}>
-                {/* Pricing */}
                 <div style={{marginBottom:20}}>
                   <div style={{fontSize:9,letterSpacing:2,textTransform:"uppercase",color:C.muted,marginBottom:8}}>Pricing</div>
                   <div style={{display:"flex",gap:1}}>
@@ -962,16 +958,12 @@ export default function App() {
                     ))}
                   </div>
                 </div>
-
-                {/* Description */}
                 {detailProduct.description&&(
                   <div style={{marginBottom:20}}>
                     <div style={{fontSize:9,letterSpacing:2,textTransform:"uppercase",color:C.muted,marginBottom:8}}>Description</div>
                     <div style={{fontSize:15,color:C.ink,lineHeight:1.65,fontFamily:"'Cormorant Garamond',serif"}}>{detailProduct.description}</div>
                   </div>
                 )}
-
-                {/* What's in the box */}
                 {detailProduct.whats_in_box?.length>0&&(
                   <div style={{marginBottom:20}}>
                     <div style={{fontSize:9,letterSpacing:2,textTransform:"uppercase",color:C.muted,marginBottom:8}}>What's in the box</div>
@@ -984,8 +976,6 @@ export default function App() {
                     </div>
                   </div>
                 )}
-
-                {/* Occasions */}
                 {detailProduct.occasions&&(
                   <div style={{marginBottom:20}}>
                     <div style={{fontSize:9,letterSpacing:2,textTransform:"uppercase",color:C.muted,marginBottom:8}}>Occasions</div>
@@ -996,8 +986,6 @@ export default function App() {
                     </div>
                   </div>
                 )}
-
-                {/* Logistics */}
                 <div style={{marginBottom:20}}>
                   <div style={{fontSize:9,letterSpacing:2,textTransform:"uppercase",color:C.muted,marginBottom:8}}>Logistics</div>
                   <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:1}}>
@@ -1014,23 +1002,17 @@ export default function App() {
                     ))}
                   </div>
                 </div>
-
-                {/* Attributes */}
                 <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:20}}>
                   {detailProduct.edible&&<span style={{fontSize:10,padding:"3px 10px",background:"#FAEEDA",border:"0.5px solid #c8a96e",color:"#854F0B"}}>Edible</span>}
                   {detailProduct.fragile&&<span style={{fontSize:10,padding:"3px 10px",background:"#FAEEDA",border:"0.5px solid #c8a96e",color:"#854F0B"}}>Fragile</span>}
                   {detailProduct.customisable&&<span style={{fontSize:10,padding:"3px 10px",background:"#f0f8f0",border:"0.5px solid #5a8a5a",color:"#3B6D11"}}>Customisable</span>}
                 </div>
-
-                {/* Keywords */}
                 {detailProduct.keywords&&(
                   <div style={{marginBottom:20}}>
                     <div style={{fontSize:9,letterSpacing:2,textTransform:"uppercase",color:C.muted,marginBottom:8}}>Search Keywords</div>
                     <div style={{fontSize:13,color:C.muted,fontStyle:"italic"}}>{detailProduct.keywords}</div>
                   </div>
                 )}
-
-                {/* Tags */}
                 {productTagMap[detailProduct.id]?.length>0&&(
                   <div>
                     <div style={{fontSize:9,letterSpacing:2,textTransform:"uppercase",color:C.muted,marginBottom:8}}>Tags</div>
@@ -1043,8 +1025,6 @@ export default function App() {
                 )}
               </div>
             </div>
-
-            {/* Footer */}
             <div style={{background:"#fff",borderTop:`0.5px solid ${C.rule}`,padding:"16px 28px",display:"flex",justifyContent:"space-between",alignItems:"center",flexShrink:0}}>
               <div style={{fontFamily:"'Playfair Display',serif",fontSize:22,fontWeight:900,color:C.ink}}>₹{parseFloat(detailProduct.price).toLocaleString("en-IN")}</div>
               <div style={{display:"flex",gap:8}}>
@@ -1147,7 +1127,6 @@ function PreviewOverlay({ selectedProducts, selected, setSelected, params, total
       <div className="prev-grid">
         {selectedProducts.map(p => {
           const isActive = selected.has(p.id);
-          const tierC = TIER_COLOR[p.tier] || C.muted;
           return (
             <div key={p.id} className={`prev-card${isActive ? "" : " prev-card-removed"}`}>
               <div className="prev-img">
