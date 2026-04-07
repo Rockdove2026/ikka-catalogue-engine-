@@ -218,6 +218,7 @@ export default function App() {
         if (tScore < 0) return false;
         if (hasTagFilters && tScore === 0 && kScore === 0) return false;
         if (hasTagFilters && tScore === 0 && kScore < 20) return false;
+        if (!hasTagFilters && kScore === 0) return false;
       }
       return true;
     }).map(p => {
