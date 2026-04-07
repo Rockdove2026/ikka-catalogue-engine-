@@ -1,6 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { supabase } from "./supabase.js";
-
 const C = {
   ink:     "#1A1614",
   stone:   "#F5F0EA",
@@ -16,10 +15,8 @@ const C = {
   amber:   "#c8a96e",
   gold:    "#b8912a",
 };
-
 const CATALOGUE_URL = import.meta.env.VITE_CATALOGUE_SERVICE_URL ||
   "https://ikka-catalogue-service-production.up.railway.app";
-
 const OCCASIONS = ["All","Diwali","New Year","Birthday","Work Anniversary","Deal Milestone","Onboarding","Thank You","Corporate Event","Custom"];
 const TIER_COLOR = { Platinum: C.cobalt, Gold: C.gold, Silver: C.muted };
 const STATUS_STYLE = {
@@ -41,7 +38,6 @@ const DIMENSIONS = [
   { key: "occasion",        label: "Occasion",          required: false },
   { key: "sustainability",  label: "Sustainability",    required: false },
 ];
-
 function getFulfillmentState(product, qty = 1) {
   const stock = product.stock_quantity ?? 100;
   const mtoMoq = product.mto_moq || product.moq || 1;
@@ -53,13 +49,11 @@ function getFulfillmentState(product, qty = 1) {
   }
   return { state: "mto", label: "Made to order", leadTime: product.mto_lead_time || product.lead_time || "4-6 weeks", effectiveMoq: mtoMoq, customisable: true, belowMoq: qty < mtoMoq };
 }
-
 function priceAtQty(tiers, qty) {
   if (!tiers?.length) return 0;
   const match = tiers.filter(t => qty >= t.min_qty && (t.max_qty === null || qty <= t.max_qty)).sort((a,b) => b.min_qty - a.min_qty)[0];
   return match ? parseFloat(match.price_per_unit) : parseFloat(tiers[0].price_per_unit);
 }
-
 function scoreProduct(p, params) {
   const qty = parseInt(params.qty) || 1;
   const budget = parseFloat(params.budget) || Infinity;
@@ -78,7 +72,6 @@ function scoreProduct(p, params) {
   if (params.requireCustomisation && !fulfillment.customisable) score -= 50;
   return Math.min(100, Math.max(0, score));
 }
-
 export default function App() {
   const [tab, setTab] = useState("query");
   const [params, setParams] = useState({ budget:"", qty:"", days:"", occasion:"All", excludeEdible:false, excludeFragile:false, requireCustomisation:false });
@@ -120,29 +113,24 @@ export default function App() {
   const [keywordOnly, setKeywordOnly] = useState(false);
   const [detailProduct, setDetailProduct] = useState(null);
   const queryTimer = useRef(null);
-
   const loadTagLibrary = useCallback(async () => {
     const { data } = await supabase.from("tag_library").select("tag, dimension");
     if (data) { const lib = {}; data.forEach(({ tag, dimension }) => { if (!lib[dimension]) lib[dimension] = []; lib[dimension].push(tag); }); setTagLibrary(lib); }
   }, []);
-
   const loadProductTags = useCallback(async () => {
     const { data } = await supabase.from("product_tags").select("product_id, tag, dimension, confidence, human_confirmed");
     if (data) { const map = {}; data.forEach(({ product_id, tag, dimension, confidence, human_confirmed }) => { if (!map[product_id]) map[product_id] = []; map[product_id].push({ tag, dimension, confidence: confidence||50, human_confirmed }); }); setProductTagMap(map); }
   }, []);
-
   const loadProducts = useCallback(async () => {
     setLoading(true);
     const { data, error } = await supabase.from("catalog").select("*, pricing_tiers(*)").eq("active", true).order("popularity", { ascending: false });
     if (!error) setProducts(data || []);
     setLoading(false);
   }, []);
-
   useEffect(() => {
     loadProducts(); loadTagLibrary(); loadProductTags();
     fetch(CATALOGUE_URL + "/health").catch(()=>{});
   }, [loadProducts, loadTagLibrary, loadProductTags]);
-
   const interpretQuery = useCallback(async (query) => {
     setKeywordOnly(false);
     if (!query.trim()) { setInterpreted(null); setTagFilter({ intent:"", audience:"", style:"", include_tags:[], exclude_tags:[] }); return; }
@@ -157,11 +145,9 @@ export default function App() {
     } catch (e) { /* silent */ }
     setQueryLoading(false);
   }, []);
-
   const clearSearch = () => { setFreeQuery(""); setInterpreted(null); setTagFilter({ intent:"", audience:"", style:"", include_tags:[], exclude_tags:[] }); setKeywordOnly(false); };
   const addExcludeTag = (tag) => { const t = tag.toLowerCase().trim().replace(/\s+/g, "-"); if (!t || tagFilter.exclude_tags.includes(t)) return; setTagFilter(prev => ({ ...prev, exclude_tags: [...prev.exclude_tags, t] })); setExcludeInput(""); };
   const removeExcludeTag = (tag) => { setTagFilter(prev => ({ ...prev, exclude_tags: prev.exclude_tags.filter(t => t !== tag) })); };
-
   const tagScore = useCallback((productId) => {
     const pTags = productTagMap[productId] || [];
     const tagSet = new Set(pTags.map(t => t.tag));
@@ -179,7 +165,6 @@ export default function App() {
     for (const inc of tagFilter.include_tags) { boost += getTagBoost(inc, 10); }
     return boost;
   }, [productTagMap, tagFilter]);
-
   const keywordScore = useCallback((p, query) => {
     if (!query.trim()) return 0;
     const words = query.toLowerCase().split(/\s+/).filter(w => w.length > 1);
@@ -200,9 +185,7 @@ export default function App() {
     }
     return Math.min(60, score);
   }, []);
-
   const hasTagFilters = tagFilter.intent || tagFilter.audience || tagFilter.style || tagFilter.include_tags.length > 0 || tagFilter.exclude_tags.length > 0;
-
   const results = useMemo(() => {
     const qty = parseInt(params.qty) || 1;
     const budget = parseFloat(params.budget) || Infinity;
@@ -232,7 +215,9 @@ export default function App() {
       if (freeQuery.trim()) {
         const kScore = keywordScore(p, freeQuery);
         const tScore = hasTagFilters ? tagScore(p.id) : 0;
-        if (tScore < 0) return false;           if (hasTagFilters && tScore === 0 && kScore === 0) return false;           if (hasTagFilters && tScore === 0 && kScore < 20) return false;
+        if (tScore < 0) return false;
+        if (hasTagFilters && tScore === 0 && kScore === 0) return false;
+        if (hasTagFilters && tScore === 0 && kScore < 20) return false;
       }
       return true;
     }).map(p => {
@@ -248,13 +233,10 @@ export default function App() {
       return 0;
     });
   }, [products, params, sortBy, tagScore, keywordScore, hasTagFilters, freeQuery]);
-
   useEffect(() => { if (results.length > 0) setSelected(new Set(results.filter(p => p._score >= 40).map(p => p.id))); }, [results]);
-
   const logRequest = useCallback(async (url) => {
     await supabase.from("client_requests").insert([{ budget_per_unit:parseFloat(params.budget)||null, quantity:parseInt(params.qty)||null, occasion:params.occasion!=="All"?params.occasion:null, exclude_edible:params.excludeEdible, exclude_fragile:params.excludeFragile, results_count:results.length, pdf_url:url||null }]);
   }, [params, results]);
-
   const generatePDF = async () => {
     const qty = parseInt(params.qty) || 1;
     const sel = results.filter(p => selected.has(p.id));
@@ -282,7 +264,6 @@ export default function App() {
     } catch(err) { alert("PDF generation failed: "+err.message); }
     finally { setPdfLoading(false); setShowPdfMeta(false); }
   };
-
   const exportCSV = () => {
     const headers = ["name","category","tier","price","description","occasions","image_url","whats_in_box","box_dimensions","weight_grams","moq","lead_time","stock_quantity","mto_moq","mto_lead_time","edible","fragile","customisable","popularity","keywords"];
     const rows = products.map(p => headers.map(h => {
@@ -295,7 +276,6 @@ export default function App() {
     a.download = "ikka_dukka_catalogue_" + new Date().toISOString().slice(0,10) + ".csv";
     a.click();
   };
-
   const openTagReview = async (product) => {
     setTagProduct(product); setTagSuggestions({}); setTagSelected({}); setTagSearches({}); setCustomTags({}); setNewTags({});
     setTagLoading(true);
@@ -327,7 +307,6 @@ export default function App() {
     } catch(err) { alert("Auto-tag failed: "+err.message); setTagProduct(null); }
     setTagLoading(false);
   };
-
   const saveTags = async () => {
     if (!tagProduct) return;
     setTagSaving(true);
@@ -346,7 +325,6 @@ export default function App() {
     } catch(err) { alert("Save failed: "+err.message); }
     finally { setTagSaving(false); }
   };
-
   const toggleTag = (dimension, tag) => { setTagSelected(prev => { const next={...prev}; const s=new Set(next[dimension]||[]); s.has(tag)?s.delete(tag):s.add(tag); next[dimension]=s; return next; }); };
   const addCustomTag = (dimension, raw) => {
     const tag = raw.toLowerCase().trim().replace(/\s+/g,"-");
@@ -358,6 +336,7 @@ export default function App() {
   };
   const cfClass = c => c>=80?"high":c>=60?"med":"low";
 
+  // ─── FIX 2: saveProduct now also upserts pricing_tiers when editing ───────
   const saveProduct = async () => {
     if (!form.name||!form.price) return;
     setSaving(true);
@@ -365,6 +344,14 @@ export default function App() {
       const payload = { name:form.name, category:form.category, price:parseFloat(form.price), tier:form.tier, image_url:form.image_url, occasions:form.occasions, description:form.description, edible:form.edible, fragile:form.fragile, customisable:form.customisable, popularity:parseInt(form.popularity)||50, lead_time:form.lead_time||null, active:true, whats_in_box:form.whats_in_box||[], box_dimensions:form.box_dimensions||null, weight_grams:form.weight_grams?parseInt(form.weight_grams):null, moq:form.moq?parseInt(form.moq):null, stock_quantity:form.stock_quantity!==''?parseInt(form.stock_quantity):100, mto_moq:form.mto_moq?parseInt(form.mto_moq):null, mto_lead_time:form.mto_lead_time||null, keywords:form.keywords||null };
       if (editProduct) {
         await supabase.from("catalog").update(payload).eq("id",editProduct.id);
+        const p=parseFloat(form.price);
+        await supabase.from("pricing_tiers").upsert([
+          {product_id:editProduct.id,min_qty:1,max_qty:99,price_per_unit:p},
+          {product_id:editProduct.id,min_qty:100,max_qty:199,price_per_unit:Math.round(p*0.85)},
+          {product_id:editProduct.id,min_qty:200,max_qty:499,price_per_unit:Math.round(p*0.80)},
+          {product_id:editProduct.id,min_qty:500,max_qty:999,price_per_unit:Math.round(p*0.70)},
+          {product_id:editProduct.id,min_qty:1000,max_qty:null,price_per_unit:Math.round(p*0.60)},
+        ],{onConflict:"product_id,min_qty"});
       } else {
         const { data:ins } = await supabase.from("catalog").insert([payload]).select().single();
         if (ins) await supabase.from("pricing_tiers").insert([{product_id:ins.id,min_qty:1,max_qty:99,price_per_unit:parseFloat(form.price)},{product_id:ins.id,min_qty:100,max_qty:199,price_per_unit:parseFloat(form.price)*0.85},{product_id:ins.id,min_qty:200,max_qty:499,price_per_unit:parseFloat(form.price)*0.80},{product_id:ins.id,min_qty:500,max_qty:999,price_per_unit:parseFloat(form.price)*0.70},{product_id:ins.id,min_qty:1000,max_qty:null,price_per_unit:parseFloat(form.price)*0.60}]);
@@ -384,9 +371,7 @@ export default function App() {
       const row={}; headers.forEach((h,i)=>{row[h]=(vals[i]||"").trim().replace(/^"|"$/g,"");}); return row;
     });
   };
-
   const handleCSVFile = (e) => { const file=e.target.files[0]; if(!file) return; const reader=new FileReader(); reader.onload=(ev)=>{setCsvRows(parseCSV(ev.target.result));setCsvStatus(null);}; reader.readAsText(file); };
-
   const uploadCSV = async () => {
     if (!csvRows.length) return;
     setCsvUploading(true); setCsvStatus(null);
@@ -408,7 +393,6 @@ export default function App() {
     setCsvStatus({ok,errors}); setCsvUploading(false);
     if(ok>0){loadProducts();setCsvRows([]);}
   };
-
   const selectedProducts = results.filter(p=>selected.has(p.id));
   const totalBudget = selectedProducts.reduce((s,p)=>s+p._price*(parseInt(params.qty)||1),0);
   const totalTagSelected = Object.values(tagSelected).reduce((s,set)=>s+set.size,0);
@@ -416,19 +400,16 @@ export default function App() {
   const intentOptions = tagLibrary["intent"] || [];
   const audienceOptions = tagLibrary["audience"] || [];
   const styleOptions = tagLibrary["style"] || [];
-
   const stockBadge = (f) => {
     if (f.state === "in_stock")  return { bg:"#f0f8f0", color:"#3B6D11" };
     if (f.state === "low_stock") return { bg:"#FAEEDA", color:"#854F0B" };
     return { bg:"#F1EFE8", color:"#5F5E5A" };
   };
-
   const filteredAdminProducts = products.filter(p =>
     !adminSearch.trim() ||
     p.name.toLowerCase().includes(adminSearch.toLowerCase()) ||
     (p.category||"").toLowerCase().includes(adminSearch.toLowerCase())
   );
-
   return (
     <>
       <style>{`
@@ -609,7 +590,6 @@ export default function App() {
         .prev-generate{background:${C.ink};color:#fff;border:none;padding:10px 28px;font-size:11px;letter-spacing:2px;text-transform:uppercase;cursor:pointer;font-family:inherit;flex-shrink:0;}
         .prev-generate:disabled{opacity:0.6;cursor:not-allowed;}
       `}</style>
-
       <div className="hdr">
         <div className="hdr-brand">
           <div className="hdr-name">Ikka &thinsp;<em>Dukka</em></div>
@@ -621,7 +601,6 @@ export default function App() {
           ))}
         </div>
       </div>
-
       {tab==="query" && (
         <div className="layout">
           <div className="sidebar">
@@ -748,7 +727,6 @@ export default function App() {
           </div>
         </div>
       )}
-
       {tab==="admin"&&(
         <div className="admin-layout">
           <div className="admin-side">
@@ -802,7 +780,6 @@ export default function App() {
                 </div>
               </>
             )}
-
             {(adminView==="add"||adminView==="edit")&&(
               <div className="pf-wrap">
                 <div className="admin-eyebrow">{editProduct?"Editing — "+editProduct.name:"Add New Product"}</div>
@@ -893,7 +870,6 @@ export default function App() {
                 </div>
               </div>
             )}
-
             {adminView==="csv"&&(
               <>
                 <div className="admin-eyebrow">Bulk Upload — CSV</div>
@@ -915,7 +891,6 @@ export default function App() {
           </div>
         </div>
       )}
-
       {showPdfMeta&&(
         <div className="overlay" onClick={()=>setShowPdfMeta(false)}>
           <div className="overlay-box" onClick={e=>e.stopPropagation()}>
@@ -930,7 +905,6 @@ export default function App() {
           </div>
         </div>
       )}
-
       {showPreview&&(
         <PreviewOverlay
           selectedProducts={selectedProducts}
@@ -949,7 +923,6 @@ export default function App() {
           stockBadge={stockBadge}
         />
       )}
-
       {detailProduct&&(
         <div style={{position:"fixed",inset:0,background:"rgba(26,22,20,0.6)",zIndex:300,display:"flex",alignItems:"stretch",justifyContent:"flex-end"}} onClick={()=>setDetailProduct(null)}>
           <div style={{background:C.stone,width:"min(440px,100vw)",display:"flex",flexDirection:"column",overflow:"hidden"}} onClick={e=>e.stopPropagation()}>
@@ -973,11 +946,12 @@ export default function App() {
               <div style={{padding:"24px 28px"}}>
                 <div style={{marginBottom:20}}>
                   <div style={{fontSize:9,letterSpacing:2,textTransform:"uppercase",color:C.muted,marginBottom:8}}>Pricing</div>
+                  {/* ─── FIX 1: reads from pricing_tiers instead of detailProduct.price * mult ─── */}
                   <div style={{display:"flex",gap:1}}>
-                    {[["1–99",1],["100–199",0.85],["200–499",0.80],["500–999",0.70],["1000+",0.60]].map(([label,mult])=>(
+                    {[[1,"1–99"],[100,"100–199"],[200,"200–499"],[500,"500–999"],[1000,"1000+"]].map(([q,label])=>(
                       <div key={label} style={{flex:1,background:"#fff",padding:"8px 10px",borderRight:"0.5px solid "+C.rule,textAlign:"center"}}>
                         <div style={{fontSize:9,color:C.muted,letterSpacing:1,textTransform:"uppercase",marginBottom:3}}>{label}</div>
-                        <div style={{fontFamily:"'Playfair Display',serif",fontSize:13,fontWeight:700,color:C.ink}}>₹{Math.round(parseFloat(detailProduct.price)*mult).toLocaleString("en-IN")}</div>
+                        <div style={{fontFamily:"'Playfair Display',serif",fontSize:13,fontWeight:700,color:C.ink}}>₹{priceAtQty(detailProduct.pricing_tiers,q).toLocaleString("en-IN")}</div>
                       </div>
                     ))}
                   </div>
@@ -1050,7 +1024,7 @@ export default function App() {
               </div>
             </div>
             <div style={{background:"#fff",borderTop:"0.5px solid "+C.rule,padding:"16px 28px",display:"flex",justifyContent:"space-between",alignItems:"center",flexShrink:0}}>
-              <div style={{fontFamily:"'Playfair Display',serif",fontSize:22,fontWeight:900,color:C.ink}}>₹{parseFloat(detailProduct.price).toLocaleString("en-IN")}</div>
+              <div style={{fontFamily:"'Playfair Display',serif",fontSize:22,fontWeight:900,color:C.ink}}>₹{priceAtQty(detailProduct.pricing_tiers,1).toLocaleString("en-IN")}</div>
               <div style={{display:"flex",gap:8}}>
                 <button onClick={()=>{openTagReview(detailProduct);setDetailProduct(null);}} style={{padding:"9px 16px",border:"0.5px solid "+C.green,background:"transparent",color:C.green,fontSize:10,letterSpacing:1.5,textTransform:"uppercase",cursor:"pointer"}}>Tag →</button>
                 <button onClick={()=>{setSelected(prev=>{const n=new Set(prev);n.has(detailProduct.id)?n.delete(detailProduct.id):n.add(detailProduct.id);return n;});setDetailProduct(null);}} style={{padding:"9px 20px",background:selected.has(detailProduct.id)?C.red:C.ink,border:"none",color:"#fff",fontSize:10,letterSpacing:1.5,textTransform:"uppercase",cursor:"pointer"}}>
@@ -1061,7 +1035,6 @@ export default function App() {
           </div>
         </div>
       )}
-
       {tagProduct&&(
         <div className="tag-overlay" onClick={()=>setTagProduct(null)}>
           <div className="tag-panel" onClick={e=>e.stopPropagation()}>
@@ -1115,7 +1088,6 @@ export default function App() {
     </>
   );
 }
-
 function PreviewOverlay({ selectedProducts, selected, setSelected, params, totalBudget, clientName, pdfLoading, onClose, onGeneratePDF, C, TIER_COLOR, getFulfillmentState, stockBadge, allProducts }) {
   const [addSearch, setAddSearch] = useState("");
   const qty = parseInt(params.qty) || 1;
@@ -1127,7 +1099,6 @@ function PreviewOverlay({ selectedProducts, selected, setSelected, params, total
   const addResults = addSearch.trim().length > 0
     ? notSelected.filter(p => p.name.toLowerCase().includes(addSearch.toLowerCase()) || (p.category||"").toLowerCase().includes(addSearch.toLowerCase()))
     : notSelected;
-
   return (
     <div className="prev-overlay">
       <div className="prev-header">
