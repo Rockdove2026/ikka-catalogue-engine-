@@ -216,9 +216,8 @@ export default function App() {
         const kScore = keywordScore(p, freeQuery);
         const tScore = hasTagFilters ? tagScore(p.id) : 0;
         if (tScore < 0) return false;
-        if (hasTagFilters && tScore === 0 && kScore === 0) return false;
-        if (hasTagFilters && tScore === 0 && kScore < 20) return false;
-        if (!hasTagFilters && kScore === 0) return false;
+        if (tScore === 0 && kScore === 0) return false;
+        if (tScore === 0 && kScore < 20) return false;
       }
       return true;
     }).map(p => {
