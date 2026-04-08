@@ -130,6 +130,12 @@ export default function App() {
   useEffect(() => {
     loadProducts(); loadTagLibrary(); loadProductTags();
     fetch(CATALOGUE_URL + "/health").catch(()=>{});
+    const sub = supabase
+      .channel("catalog-changes")
+      .on("postgres_changes", { event: "*", schema: "public", table: "catalog" }, () => { loadProducts(); })
+      .on("postgres_changes", { event: "*", schema: "public", table: "pricing_tiers" }, () => { loadProducts(); })
+      .subscribe();
+    return () => { supabase.removeChannel(sub); };
   }, [loadProducts, loadTagLibrary, loadProductTags]);
   const interpretQuery = useCallback(async (query) => {
     setKeywordOnly(false);
