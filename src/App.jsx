@@ -121,21 +121,17 @@ export default function App() {
     const { data } = await supabase.from("product_tags").select("product_id, tag, dimension, confidence, human_confirmed");
     if (data) { const map = {}; data.forEach(({ product_id, tag, dimension, confidence, human_confirmed }) => { if (!map[product_id]) map[product_id] = []; map[product_id].push({ tag, dimension, confidence: confidence||50, human_confirmed }); }); setProductTagMap(map); }
   }, []);
-  const loadProducts = useCallback(async () => {
-    setLoading(true);
+  const loadProducts = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     const { data, error } = await supabase.from("catalog").select("*, pricing_tiers(*)").eq("active", true).order("popularity", { ascending: false });
     if (!error) setProducts(data || []);
-    setLoading(false);
+    if (!silent) setLoading(false);
   }, []);
   useEffect(() => {
     loadProducts(); loadTagLibrary(); loadProductTags();
     fetch(CATALOGUE_URL + "/health").catch(()=>{});
-    const sub = supabase
-      .channel("catalog-changes")
-      .on("postgres_changes", { event: "*", schema: "public", table: "catalog" }, () => { loadProducts(); })
-      .on("postgres_changes", { event: "*", schema: "public", table: "pricing_tiers" }, () => { loadProducts(); })
-      .subscribe();
-    return () => { supabase.removeChannel(sub); };
+    const poll = setInterval(() => { loadProducts(true); }, 30000);
+    return () => { clearInterval(poll); };
   }, [loadProducts, loadTagLibrary, loadProductTags]);
   const interpretQuery = useCallback(async (query) => {
     setKeywordOnly(false);
