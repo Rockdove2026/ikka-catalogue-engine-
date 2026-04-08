@@ -358,7 +358,7 @@ export default function App() {
         const { data:ins } = await supabase.from("catalog").insert([payload]).select().single();
         if (ins) await supabase.from("pricing_tiers").insert([{product_id:ins.id,min_qty:1,max_qty:99,price_per_unit:parseFloat(form.price)},{product_id:ins.id,min_qty:100,max_qty:199,price_per_unit:parseFloat(form.price)*0.85},{product_id:ins.id,min_qty:200,max_qty:499,price_per_unit:parseFloat(form.price)*0.80},{product_id:ins.id,min_qty:500,max_qty:999,price_per_unit:parseFloat(form.price)*0.70},{product_id:ins.id,min_qty:1000,max_qty:null,price_per_unit:parseFloat(form.price)*0.60}]);
       }
-      setForm(emptyForm); setEditProduct(null); setAdminView("list"); loadProducts();
+      setForm(emptyForm); setEditProduct(null); setAdminView("list"); await loadProducts(); setProducts(prev => [...prev]);
     } catch(err) { alert("Save failed: "+err.message); }
     finally { setSaving(false); }
   };
