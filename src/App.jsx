@@ -793,7 +793,7 @@ export default function App() {
             )}
             {(adminView==="add"||adminView==="edit")&&(
               <div className="pf-wrap">
-                <div className="admin-eyebrow">{editProduct?"Editing — "+editProduct.name:"Add New Product"}</div>
+                <div className="admin-eyebrow"><span>{editProduct?"Editing — "+editProduct.name:"Add New Product"}</span><button onClick={()=>{setAdminView("list");setEditProduct(null);setForm(emptyForm);}} style={{background:"none",border:"0.5px solid "+C.rule,color:C.muted,fontSize:10,letterSpacing:1.5,textTransform:"uppercase",padding:"4px 14px",cursor:"pointer",fontFamily:"inherit"}}>← Back</button></div>
                 <div className="pf-card">
                   <div className="pf-card-head"><div className="pf-card-num">1</div><div className="pf-card-title">Core Details</div></div>
                   <div className="pf-card-body">
@@ -883,7 +883,7 @@ export default function App() {
             )}
             {adminView==="brands"&&(
               <>
-                <div className="admin-eyebrow"><span>Manage Brands — {brands.length} brands</span></div>
+                <div className="admin-eyebrow"><span>Manage Brands — {brands.length} brands</span><button onClick={()=>setAdminView("list")} style={{background:"none",border:"0.5px solid "+C.rule,color:C.muted,fontSize:10,letterSpacing:1.5,textTransform:"uppercase",padding:"4px 14px",cursor:"pointer",fontFamily:"inherit"}}>← Back</button></div>
                 <div style={{maxWidth:500}}>
                   <div style={{background:"#fff",border:"0.5px solid "+C.rule,marginBottom:16}}>
                     {brands.map((b,i)=>(
@@ -903,15 +903,21 @@ export default function App() {
             )}
             {adminView==="csv"&&(
               <>
-                <div className="admin-eyebrow">Bulk Upload — CSV</div>
+                <div className="admin-eyebrow"><span>Bulk Upload — CSV</span><button onClick={()=>setAdminView("list")} style={{background:"none",border:"0.5px solid "+C.rule,color:C.muted,fontSize:10,letterSpacing:1.5,textTransform:"uppercase",padding:"4px 14px",cursor:"pointer",fontFamily:"inherit"}}>← Back</button></div>
                 <div style={{maxWidth:640}}>
                   <div style={{background:"#fff",border:"0.5px solid "+C.rule,padding:"20px 24px",marginBottom:16}}>
                     <div style={{fontFamily:"'Playfair Display',serif",fontSize:14,fontWeight:700,color:C.ink,marginBottom:6}}>CSV Format</div>
                     <div style={{fontFamily:"'EB Garamond',serif",fontSize:13,color:C.muted,lineHeight:1.7,marginBottom:12}}>
                       Required: <strong>name, price</strong><br/>
-                      Optional: category, tier, description, occasions (pipe-separated), image_url, edible, fragile, customisable, popularity, lead_time, moq, box_dimensions, weight_grams, stock_quantity, mto_moq, mto_lead_time
+                      Optional: category, tier, brand, description, occasions (pipe-separated), image_url, edible, fragile, customisable, popularity, lead_time, moq, box_dimensions, weight_grams, stock_quantity, mto_moq, mto_lead_time<br/>
+                      <span style={{color:C.green}}>Brand defaults to "Ikka Dukka" if not specified.</span>
                     </div>
-                    <a href="/product_upload_template.csv" download style={{fontFamily:"'EB Garamond',serif",fontSize:12,letterSpacing:1.5,textTransform:"uppercase",color:C.cobalt}}>Download template →</a>
+                    <button onClick={()=>{
+                      const headers = ["name","price","category","tier","brand","description","occasions","image_url","edible","fragile","customisable","popularity","lead_time","moq","box_dimensions","weight_grams","stock_quantity","mto_moq","mto_lead_time","keywords","whats_in_box"];
+                      const example = [["Example Gift Set","2500","Artisanal Teas","Gold","Ikka Dukka","A beautiful curated gift set","Diwali|Thank You","https://example.com/image.jpg","false","false","true","60","7-10 working days","1","25 × 20 × 10 cm","500","100","50","4-6 weeks","tea, artisanal, festive","Tea tin|Honey jar|Card"]];
+                      const csv = [headers.join(","), ...example.map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(","))].join("\n");
+                      const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([csv],{type:"text/csv"}));a.download="ikka_dukka_upload_template.csv";a.click();
+                    }} style={{fontFamily:"'EB Garamond',serif",fontSize:12,letterSpacing:1.5,textTransform:"uppercase",color:C.cobalt,background:"none",border:"none",cursor:"pointer",padding:0}}>Download template →</button>
                   </div>
                   <div style={{marginBottom:20}}><label className="f-label">Select CSV file</label><input type="file" accept=".csv" onChange={handleCSVFile} style={{display:"block",width:"100%",padding:"8px 0",fontFamily:"'EB Garamond',serif",fontSize:14,color:C.ink,borderBottom:"1px solid "+C.rule,background:"transparent",outline:"none",cursor:"pointer"}}/></div>
                   {csvRows.length>0&&(<div style={{marginBottom:20}}><div style={{fontFamily:"'EB Garamond',serif",fontSize:13,color:C.muted,marginBottom:10}}>{csvRows.length} rows ready · AI will auto-tag after upload</div><button onClick={uploadCSV} disabled={csvUploading} className="f-save">{csvUploading?"Uploading…":"Upload "+csvRows.length+" Products →"}</button></div>)}
