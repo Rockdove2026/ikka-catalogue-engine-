@@ -94,7 +94,7 @@ export default function App() {
   const [adminView, setAdminView] = useState("list");
   const [editProduct, setEditProduct] = useState(null);
   const [saving, setSaving] = useState(false);
-  const emptyForm = { name:"", category:"", price:"", tier:"Silver", image_url:"", occasions:"", description:"", edible:false, fragile:false, customisable:true, popularity:50, whats_in_box:[], box_dimensions:"", weight_grams:"", moq:"", lead_time:"", stock_quantity:"100", mto_moq:"", mto_lead_time:"", keywords:"" };
+  const emptyForm = { name:"", category:"", price:"", tier:"Silver", brand:"Ikka Dukka", image_url:"", occasions:"", description:"", edible:false, fragile:false, customisable:true, popularity:50, whats_in_box:[], box_dimensions:"", weight_grams:"", moq:"", lead_time:"", stock_quantity:"100", mto_moq:"", mto_lead_time:"", keywords:"" };
   const [form, setForm] = useState(emptyForm);
   const [boxItemInput, setBoxItemInput] = useState("");
   const [imageUploading, setImageUploading] = useState(false);
@@ -267,7 +267,7 @@ export default function App() {
     finally { setPdfLoading(false); setShowPdfMeta(false); }
   };
   const exportCSV = () => {
-    const headers = ["name","category","tier","price","description","occasions","image_url","whats_in_box","box_dimensions","weight_grams","moq","lead_time","stock_quantity","mto_moq","mto_lead_time","edible","fragile","customisable","popularity","keywords"];
+    const headers = ["name","category","tier","price","brand","description","occasions","image_url","whats_in_box","box_dimensions","weight_grams","moq","lead_time","stock_quantity","mto_moq","mto_lead_time","edible","fragile","customisable","popularity","keywords"];
     const rows = products.map(p => headers.map(h => {
       const v = h === "whats_in_box" ? (p.whats_in_box||[]).join("|") : (p[h]??"");
       return '"' + String(v).replace(/"/g, '""') + '"';
@@ -343,7 +343,7 @@ export default function App() {
     if (!form.name||!form.price) return;
     setSaving(true);
     try {
-      const payload = { name:form.name, category:form.category, price:parseFloat(form.price), tier:form.tier, image_url:form.image_url, occasions:form.occasions, description:form.description, edible:form.edible, fragile:form.fragile, customisable:form.customisable, popularity:parseInt(form.popularity)||50, lead_time:form.lead_time||null, active:true, whats_in_box:form.whats_in_box||[], box_dimensions:form.box_dimensions||null, weight_grams:form.weight_grams?parseInt(form.weight_grams):null, moq:form.moq?parseInt(form.moq):null, stock_quantity:form.stock_quantity!==''?parseInt(form.stock_quantity):100, mto_moq:form.mto_moq?parseInt(form.mto_moq):null, mto_lead_time:form.mto_lead_time||null, keywords:form.keywords||null };
+      const payload = { name:form.name, category:form.category, price:parseFloat(form.price), tier:form.tier, image_url:form.image_url, occasions:form.occasions, description:form.description, edible:form.edible, fragile:form.fragile, customisable:form.customisable, popularity:parseInt(form.popularity)||50, lead_time:form.lead_time||null, active:true, whats_in_box:form.whats_in_box||[], box_dimensions:form.box_dimensions||null, weight_grams:form.weight_grams?parseInt(form.weight_grams):null, moq:form.moq?parseInt(form.moq):null, stock_quantity:form.stock_quantity!==''?parseInt(form.stock_quantity):100, mto_moq:form.mto_moq?parseInt(form.mto_moq):null, mto_lead_time:form.mto_lead_time||null, keywords:form.keywords||null, brand:form.brand||"Ikka Dukka" };
       if (editProduct) {
         await supabase.from("catalog").update(payload).eq("id",editProduct.id);
         const p=parseFloat(form.price);
@@ -358,7 +358,7 @@ export default function App() {
         const { data:ins } = await supabase.from("catalog").insert([payload]).select().single();
         if (ins) await supabase.from("pricing_tiers").insert([{product_id:ins.id,min_qty:1,max_qty:99,price_per_unit:parseFloat(form.price)},{product_id:ins.id,min_qty:100,max_qty:199,price_per_unit:parseFloat(form.price)*0.85},{product_id:ins.id,min_qty:200,max_qty:499,price_per_unit:parseFloat(form.price)*0.80},{product_id:ins.id,min_qty:500,max_qty:999,price_per_unit:parseFloat(form.price)*0.70},{product_id:ins.id,min_qty:1000,max_qty:null,price_per_unit:parseFloat(form.price)*0.60}]);
       }
-      setForm(emptyForm); setEditProduct(null); setAdminView("list"); await loadProducts(); setProducts(prev => [...prev]);
+      setForm(emptyForm); setEditProduct(null); setAdminView("list"); loadProducts();
     } catch(err) { alert("Save failed: "+err.message); }
     finally { setSaving(false); }
   };
@@ -383,7 +383,7 @@ export default function App() {
       const bool=v=>v==="true"||v==="1"||v==="yes";
       const tierVal=row.tier||"Silver"; const p=parseFloat(row.price)||0;
       const witb = row.whats_in_box ? row.whats_in_box.split("|").map(s=>s.trim()).filter(Boolean) : [];
-      const payload={name:row.name,category:row.category||"",price:p,tier:tierVal,description:row.description||"",occasions:row.occasions||"",image_url:row.image_url||"",edible:bool(row.edible),fragile:bool(row.fragile),customisable:bool(row.customisable!==""?row.customisable:"true"),popularity:parseInt(row.popularity)||50,lead_time:row.lead_time||null,active:true,tagging_status:"untagged",whats_in_box:witb,box_dimensions:row.box_dimensions||null,weight_grams:row.weight_grams?parseInt(row.weight_grams):null,moq:row.moq?parseInt(row.moq):null,stock_quantity:row.stock_quantity?parseInt(row.stock_quantity):100,mto_moq:row.mto_moq?parseInt(row.mto_moq):null,mto_lead_time:row.mto_lead_time||null,keywords:row.keywords||null};
+      const payload={name:row.name,category:row.category||"",price:p,tier:tierVal,description:row.description||"",occasions:row.occasions||"",image_url:row.image_url||"",edible:bool(row.edible),fragile:bool(row.fragile),customisable:bool(row.customisable!==""?row.customisable:"true"),popularity:parseInt(row.popularity)||50,lead_time:row.lead_time||null,active:true,tagging_status:"untagged",whats_in_box:witb,box_dimensions:row.box_dimensions||null,weight_grams:row.weight_grams?parseInt(row.weight_grams):null,moq:row.moq?parseInt(row.moq):null,stock_quantity:row.stock_quantity?parseInt(row.stock_quantity):100,mto_moq:row.mto_moq?parseInt(row.mto_moq):null,mto_lead_time:row.mto_lead_time||null,keywords:row.keywords||null,brand:row.brand||"Ikka Dukka"};
       const {data:ins,error}=await supabase.from("catalog").insert([payload]).select().single();
       if(error){errors.push(row.name+": "+error.message);continue;}
       if(ins){
@@ -691,7 +691,7 @@ export default function App() {
                           </div>
                           <div className="p-img">{p.image_url?.startsWith("http")?<img src={p.image_url} alt={p.name}/>:<div className="p-img-emoji">{p.fb_icon||"🎁"}</div>}</div>
                           <div className="p-body">
-                            <div className="p-cat-row"><div className="p-cat">{p.category}</div><span className="p-tier" style={{color:tierC,borderColor:tierC}}>{p.tier}</span></div>
+                            <div className="p-cat-row"><div className="p-cat">{p.category}{p.brand&&p.brand!=="Ikka Dukka"&&<span style={{marginLeft:6,background:"#E6F1FB",color:"#2A5FAD",padding:"1px 6px",borderRadius:99,fontSize:8,letterSpacing:1}}>{p.brand}</span>}</div><span className="p-tier" style={{color:tierC,borderColor:tierC}}>{p.tier}</span></div>
                             <div className="p-name">{p.name}</div>
                             {p.description&&<div className="p-desc">{p.description.slice(0,90)}{p.description.length>90?"…":""}</div>}
                             <div className="p-price">₹{p._price.toLocaleString("en-IN")}</div>
@@ -771,7 +771,7 @@ export default function App() {
                             <td className="admin-td"><span className="status-badge" style={{background:st.bg,color:st.color}}>{st.label}</span></td>
                             <td className="admin-td" style={{display:"flex",gap:6}}>
                               <button className="admin-act" style={{borderColor:C.green,color:C.green}} onClick={()=>openTagReview(p)}>Tag →</button>
-                              <button className="admin-act" style={{borderColor:C.cobalt,color:C.cobalt}} onClick={()=>{setEditProduct(p);setForm({name:p.name,category:p.category||"",price:String(p.price),tier:p.tier||"Silver",image_url:p.image_url||"",occasions:p.occasions||"",description:p.description||"",edible:p.edible||false,fragile:p.fragile||false,customisable:p.customisable!==false,popularity:p.popularity||50,whats_in_box:p.whats_in_box||[],box_dimensions:p.box_dimensions||"",weight_grams:p.weight_grams?String(p.weight_grams):"",moq:p.moq?String(p.moq):"",lead_time:p.lead_time||"",stock_quantity:p.stock_quantity!=null?String(p.stock_quantity):"100",mto_moq:p.mto_moq?String(p.mto_moq):"",mto_lead_time:p.mto_lead_time||"",keywords:p.keywords||""});setAdminView("edit");}}>Edit →</button>
+                              <button className="admin-act" style={{borderColor:C.cobalt,color:C.cobalt}} onClick={()=>{setEditProduct(p);setForm({name:p.name,category:p.category||"",price:String(p.price),tier:p.tier||"Silver",image_url:p.image_url||"",occasions:p.occasions||"",description:p.description||"",edible:p.edible||false,fragile:p.fragile||false,customisable:p.customisable!==false,popularity:p.popularity||50,whats_in_box:p.whats_in_box||[],box_dimensions:p.box_dimensions||"",weight_grams:p.weight_grams?String(p.weight_grams):"",moq:p.moq?String(p.moq):"",lead_time:p.lead_time||"",stock_quantity:p.stock_quantity!=null?String(p.stock_quantity):"100",mto_moq:p.mto_moq?String(p.mto_moq):"",mto_lead_time:p.mto_lead_time||"",brand:p.brand||"Ikka Dukka",keywords:p.keywords||""});setAdminView("edit");}}>Edit →</button>
                               <button className="admin-act" style={{borderColor:C.red,color:C.red}} onClick={async()=>{if(window.confirm("Delete "+p.name+"?")){await supabase.from("product_tags").delete().eq("product_id",p.id);await supabase.from("pricing_tiers").delete().eq("product_id",p.id);await supabase.from("catalog").delete().eq("id",p.id);loadProducts();}}}>Delete</button>
                             </td>
                           </tr>
@@ -793,7 +793,7 @@ export default function App() {
                       <div className="pf-field"><label className="pf-label">Category</label><input className="pf-inp" type="text" placeholder="e.g. Artisanal Teas" value={form.category} onChange={e=>setForm(p=>({...p,category:e.target.value}))}/></div>
                       <div className="pf-field"><label className="pf-label">Tier</label><select className="pf-sel" value={form.tier} onChange={e=>setForm(p=>({...p,tier:e.target.value}))}>{["Silver","Gold","Platinum"].map(t=><option key={t}>{t}</option>)}</select></div>
                     </div>
-                    <div className="pf-row pf-row-1"><div className="pf-field"><label className="pf-label">Description</label><textarea className="pf-ta" rows={2} placeholder="Short product description…" value={form.description} onChange={e=>setForm(p=>({...p,description:e.target.value}))}/></div></div>
+                    <div className="pf-row pf-row-1"><div className="pf-field"><label className="pf-label">Brand</label><select className="pf-sel" value={form.brand} onChange={e=>setForm(p=>({...p,brand:e.target.value}))}><option value="Ikka Dukka">Ikka Dukka</option><option value="Nicobar">Nicobar</option><option value="Mason House">Mason House</option><option value="Bombay Perfumery">Bombay Perfumery</option><option value="Other">Other</option></select><div className="pf-hint">Ikka Dukka = own product. Others = third-party sourced.</div></div></div><div className="pf-row pf-row-2"><div className="pf-field"><label className="pf-label">Brand</label><select className="pf-sel" value={form.brand} onChange={e=>setForm(p=>({...p,brand:e.target.value}))}><option value="Ikka Dukka">Ikka Dukka</option><option value="Nicobar">Nicobar</option><option value="Mason House">Mason House</option><option value="Bombay Perfumery">Bombay Perfumery</option><option value="All Good Scents">All Good Scents</option><option value="Meena Perfumery">Meena Perfumery</option><option value="Other">Other</option></select><div className="pf-hint">Own product or third-party sourced.</div></div></div><div className="pf-row pf-row-1"><div className="pf-field"><label className="pf-label">Description</label><textarea className="pf-ta" rows={2} placeholder="Short product description…" value={form.description} onChange={e=>setForm(p=>({...p,description:e.target.value}))}/></div></div>
                     <div className="pf-row pf-row-1"><div className="pf-field"><label className="pf-label">Search Keywords</label><input className="pf-inp" type="text" placeholder="e.g. brass, desk gift, Diwali, corporate, sustainable" value={form.keywords} onChange={e=>setForm(p=>({...p,keywords:e.target.value}))}/><div className="pf-hint">Extra terms to make this product discoverable — craft, theme, material, use case.</div></div></div>
                   </div>
                 </div>
@@ -931,7 +931,7 @@ export default function App() {
             <div style={{background:C.sidebar,padding:"20px 28px",flexShrink:0}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
                 <div style={{flex:1,paddingRight:16}}>
-                  <div style={{fontSize:9,letterSpacing:2,textTransform:"uppercase",color:"#888",marginBottom:6}}>{detailProduct.category}</div>
+                  <div style={{fontSize:9,letterSpacing:2,textTransform:"uppercase",color:"#888",marginBottom:6}}>{detailProduct.category}{detailProduct.brand&&detailProduct.brand!=="Ikka Dukka"&&<span style={{marginLeft:8,background:"#E6F1FB",color:"#2A5FAD",padding:"1px 7px",borderRadius:99,fontSize:9,letterSpacing:1}}>{detailProduct.brand}</span>}</div>
                   <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:24,color:"#fff",fontWeight:300,lineHeight:1.2,marginBottom:6}}>{detailProduct.name}</div>
                   <div style={{display:"flex",gap:8,alignItems:"center"}}>
                     <span style={{fontSize:9,letterSpacing:1,textTransform:"uppercase",padding:"2px 8px",border:"0.5px solid "+(TIER_COLOR[detailProduct.tier]||C.muted),color:TIER_COLOR[detailProduct.tier]||C.muted}}>{detailProduct.tier}</span>
