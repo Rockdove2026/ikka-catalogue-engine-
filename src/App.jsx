@@ -89,6 +89,9 @@ export default function App() {
   const [interpreted, setInterpreted] = useState(null);
   const [tagFilter, setTagFilter] = useState({ intent:"", audience:"", style:"", include_tags:[], exclude_tags:[] });
   const [excludeInput, setExcludeInput] = useState("");
+  const [brandFilter, setBrandFilter] = useState("");
+  const [brands, setBrands] = useState([]);
+  const [newBrandInput, setNewBrandInput] = useState("");
   const [productTagMap, setProductTagMap] = useState({});
   const [tagLibrary, setTagLibrary] = useState({});
   const [adminView, setAdminView] = useState("list");
@@ -113,6 +116,10 @@ export default function App() {
   const [keywordOnly, setKeywordOnly] = useState(false);
   const [detailProduct, setDetailProduct] = useState(null);
   const queryTimer = useRef(null);
+  const loadBrands = useCallback(async () => {
+    const { data } = await supabase.from("brands").select("name").order("name");
+    if (data) setBrands(data.map(b => b.name));
+  }, []);
   const loadTagLibrary = useCallback(async () => {
     const { data } = await supabase.from("tag_library").select("tag, dimension");
     if (data) { const lib = {}; data.forEach(({ tag, dimension }) => { if (!lib[dimension]) lib[dimension] = []; lib[dimension].push(tag); }); setTagLibrary(lib); }
@@ -128,11 +135,11 @@ export default function App() {
     if (!silent) setLoading(false);
   }, []);
   useEffect(() => {
-    loadProducts(); loadTagLibrary(); loadProductTags();
+    loadProducts(); loadTagLibrary(); loadProductTags(); loadBrands();
     fetch(CATALOGUE_URL + "/health").catch(()=>{});
     const poll = setInterval(() => { loadProducts(true); }, 30000);
     return () => { clearInterval(poll); };
-  }, [loadProducts, loadTagLibrary, loadProductTags]);
+  }, [loadProducts, loadTagLibrary, loadProductTags, loadBrands]);
   const interpretQuery = useCallback(async (query) => {
     setKeywordOnly(false);
     if (!query.trim()) { setInterpreted(null); setTagFilter({ intent:"", audience:"", style:"", include_tags:[], exclude_tags:[] }); return; }
@@ -147,7 +154,7 @@ export default function App() {
     } catch (e) { /* silent */ }
     setQueryLoading(false);
   }, []);
-  const clearSearch = () => { setFreeQuery(""); setInterpreted(null); setTagFilter({ intent:"", audience:"", style:"", include_tags:[], exclude_tags:[] }); setKeywordOnly(false); };
+  const clearSearch = () => { setFreeQuery(""); setInterpreted(null); setTagFilter({ intent:"", audience:"", style:"", include_tags:[], exclude_tags:[] }); setKeywordOnly(false); setBrandFilter(""); };
   const addExcludeTag = (tag) => { const t = tag.toLowerCase().trim().replace(/\s+/g, "-"); if (!t || tagFilter.exclude_tags.includes(t)) return; setTagFilter(prev => ({ ...prev, exclude_tags: [...prev.exclude_tags, t] })); setExcludeInput(""); };
   const removeExcludeTag = (tag) => { setTagFilter(prev => ({ ...prev, exclude_tags: prev.exclude_tags.filter(t => t !== tag) })); };
   const tagScore = useCallback((productId) => {
@@ -194,6 +201,7 @@ export default function App() {
     return products.filter(p => {
       if (params.excludeEdible && p.edible) return false;
       if (params.excludeFragile && p.fragile) return false;
+      if (brandFilter && p.brand !== brandFilter) return false;
       const price = priceAtQty(p.pricing_tiers, qty);
       if (budget < Infinity && price > budget * 1.1) return false;
       if (tagFilter.exclude_tags.length > 0) {
@@ -234,7 +242,7 @@ export default function App() {
       if (sortBy === "price_desc") return b._price - a._price;
       return 0;
     });
-  }, [products, params, sortBy, tagScore, keywordScore, hasTagFilters, freeQuery]);
+  }, [products, params, sortBy, tagScore, keywordScore, hasTagFilters, freeQuery, brandFilter]);
   useEffect(() => { if (results.length > 0) setSelected(new Set(results.filter(p => p._score >= 40).map(p => p.id))); }, [results]);
   const logRequest = useCallback(async (url) => {
     await supabase.from("client_requests").insert([{ budget_per_unit:parseFloat(params.budget)||null, quantity:parseInt(params.qty)||null, occasion:params.occasion!=="All"?params.occasion:null, exclude_edible:params.excludeEdible, exclude_fragile:params.excludeFragile, results_count:results.length, pdf_url:url||null }]);
@@ -645,6 +653,7 @@ export default function App() {
               <input type="checkbox" className="s-chk" checked={params.requireCustomisation} onChange={e=>setParams(p=>({...p,requireCustomisation:e.target.checked}))}/>
             </div>
             <div className="s-section">Smart Filters</div>
+            <div className="s-field"><label className="s-label">Brand</label><select className="s-sel" value={brandFilter} onChange={e=>setBrandFilter(e.target.value)}><option value="">All brands</option>{brands.map(b=><option key={b} value={b}>{b}</option>)}</select></div>
             <div className="s-field"><label className="s-label">Intent</label><select className="s-sel" value={tagFilter.intent} onChange={e=>setTagFilter(prev=>({...prev,intent:e.target.value}))}><option value="">Any intent</option>{intentOptions.map(t=><option key={t} value={t}>{t}</option>)}</select></div>
             <div className="s-field"><label className="s-label">Audience</label><select className="s-sel" value={tagFilter.audience} onChange={e=>setTagFilter(prev=>({...prev,audience:e.target.value}))}><option value="">Any audience</option>{audienceOptions.map(t=><option key={t} value={t}>{t}</option>)}</select></div>
             <div className="s-field"><label className="s-label">Style</label><select className="s-sel" value={tagFilter.style} onChange={e=>setTagFilter(prev=>({...prev,style:e.target.value}))}><option value="">Any style</option>{styleOptions.map(t=><option key={t} value={t}>{t}</option>)}</select></div>
@@ -733,7 +742,7 @@ export default function App() {
         <div className="admin-layout">
           <div className="admin-side">
             <div className="admin-s-title">Admin Panel</div>
-            {[["list","All Products"],["add","Add Product"],["csv","Bulk Upload CSV"]].map(([k,l])=>(
+            {[["list","All Products"],["add","Add Product"],["csv","Bulk Upload CSV"],["brands","Manage Brands"]].map(([k,l])=>(
               <button key={k} className={"admin-s-item"+(adminView===k?" on":"")} onClick={()=>{setAdminView(k);setEditProduct(null);setForm(emptyForm);}}>{l}</button>
             ))}
           </div>
@@ -793,7 +802,7 @@ export default function App() {
                       <div className="pf-field"><label className="pf-label">Category</label><input className="pf-inp" type="text" placeholder="e.g. Artisanal Teas" value={form.category} onChange={e=>setForm(p=>({...p,category:e.target.value}))}/></div>
                       <div className="pf-field"><label className="pf-label">Tier</label><select className="pf-sel" value={form.tier} onChange={e=>setForm(p=>({...p,tier:e.target.value}))}>{["Silver","Gold","Platinum"].map(t=><option key={t}>{t}</option>)}</select></div>
                     </div>
-                    <div className="pf-row pf-row-1"><div className="pf-field"><label className="pf-label">Brand</label><select className="pf-sel" value={form.brand} onChange={e=>setForm(p=>({...p,brand:e.target.value}))}><option value="Ikka Dukka">Ikka Dukka</option><option value="Nicobar">Nicobar</option><option value="Mason House">Mason House</option><option value="Bombay Perfumery">Bombay Perfumery</option><option value="Other">Other</option></select><div className="pf-hint">Ikka Dukka = own product. Others = third-party sourced.</div></div></div><div className="pf-row pf-row-2"><div className="pf-field"><label className="pf-label">Brand</label><select className="pf-sel" value={form.brand} onChange={e=>setForm(p=>({...p,brand:e.target.value}))}><option value="Ikka Dukka">Ikka Dukka</option><option value="Nicobar">Nicobar</option><option value="Mason House">Mason House</option><option value="Bombay Perfumery">Bombay Perfumery</option><option value="All Good Scents">All Good Scents</option><option value="Meena Perfumery">Meena Perfumery</option><option value="Other">Other</option></select><div className="pf-hint">Own product or third-party sourced.</div></div></div><div className="pf-row pf-row-1"><div className="pf-field"><label className="pf-label">Description</label><textarea className="pf-ta" rows={2} placeholder="Short product description…" value={form.description} onChange={e=>setForm(p=>({...p,description:e.target.value}))}/></div></div>
+                    <div className="pf-row pf-row-2"><div className="pf-field"><label className="pf-label">Brand</label><select className="pf-sel" value={form.brand} onChange={e=>setForm(p=>({...p,brand:e.target.value}))}>{brands.map(b=><option key={b} value={b}>{b}</option>)}</select><div className="pf-hint">Ikka Dukka = own product. Others = third-party sourced.</div></div></div><div className="pf-row pf-row-1"><div className="pf-field"><label className="pf-label">Description</label><textarea className="pf-ta" rows={2} placeholder="Short product description…" value={form.description} onChange={e=>setForm(p=>({...p,description:e.target.value}))}/></div></div>
                     <div className="pf-row pf-row-1"><div className="pf-field"><label className="pf-label">Search Keywords</label><input className="pf-inp" type="text" placeholder="e.g. brass, desk gift, Diwali, corporate, sustainable" value={form.keywords} onChange={e=>setForm(p=>({...p,keywords:e.target.value}))}/><div className="pf-hint">Extra terms to make this product discoverable — craft, theme, material, use case.</div></div></div>
                   </div>
                 </div>
@@ -871,6 +880,26 @@ export default function App() {
                   <button className="pf-save" onClick={saveProduct} disabled={saving||!form.name||!form.price}>{saving?"Saving…":editProduct?"Save Changes →":"Add Product →"}</button>
                 </div>
               </div>
+            )}
+            {adminView==="brands"&&(
+              <>
+                <div className="admin-eyebrow"><span>Manage Brands — {brands.length} brands</span></div>
+                <div style={{maxWidth:500}}>
+                  <div style={{background:"#fff",border:"0.5px solid "+C.rule,marginBottom:16}}>
+                    {brands.map((b,i)=>(
+                      <div key={b} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"12px 18px",borderBottom:i<brands.length-1?"0.5px solid "+C.rule:"none"}}>
+                        <span style={{fontFamily:"'Cormorant Garamond',serif",fontSize:16,color:C.ink}}>{b}</span>
+                        {b!=="Ikka Dukka"&&<button onClick={async()=>{if(window.confirm("Delete brand "+b+"?")){await supabase.from("brands").delete().eq("name",b);loadBrands();}}} style={{background:"none",border:"0.5px solid "+C.red,color:C.red,fontSize:10,letterSpacing:1,textTransform:"uppercase",padding:"3px 10px",cursor:"pointer"}}>Delete</button>}
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                    <input className="pf-inp" type="text" placeholder="e.g. Fabindia" value={newBrandInput} onChange={e=>setNewBrandInput(e.target.value)} onKeyDown={async e=>{if(e.key==="Enter"&&newBrandInput.trim()){await supabase.from("brands").insert([{name:newBrandInput.trim()}]);setNewBrandInput("");loadBrands();}}} style={{flex:1}}/>
+                    <button onClick={async()=>{if(newBrandInput.trim()){await supabase.from("brands").insert([{name:newBrandInput.trim()}]);setNewBrandInput("");loadBrands();}}} style={{padding:"8px 20px",background:C.ink,border:"none",color:"#fff",fontSize:11,letterSpacing:1,textTransform:"uppercase",cursor:"pointer",flexShrink:0,fontFamily:"inherit"}}>Add Brand →</button>
+                  </div>
+                  <div style={{fontSize:11,color:C.muted,marginTop:8}}>Press Enter or click Add. Ikka Dukka cannot be deleted.</div>
+                </div>
+              </>
             )}
             {adminView==="csv"&&(
               <>
