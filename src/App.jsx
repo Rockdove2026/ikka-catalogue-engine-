@@ -116,6 +116,12 @@ export default function App() {
   const [csvUploading, setCsvUploading] = useState(false);
   const [csvStatus, setCsvStatus] = useState(null);
   const [adminSearch, setAdminSearch] = useState("");
+  const [adminBrandFilter, setAdminBrandFilter] = useState("");
+  const [adminCategoryFilter, setAdminCategoryFilter] = useState("");
+  const [adminTierFilter, setAdminTierFilter] = useState("");
+  const [adminTagFilter, setAdminTagFilter] = useState("");
+  const [adminStockFilter, setAdminStockFilter] = useState("");
+  const [adminSort, setAdminSort] = useState("default");
   const [tagProduct, setTagProduct] = useState(null);
   const [tagLoading, setTagLoading] = useState(false);
   const [tagSuggestions, setTagSuggestions] = useState({});
@@ -463,11 +469,26 @@ export default function App() {
     if (f.state === "low_stock") return { bg:"#FAEEDA", color:"#854F0B" };
     return { bg:"#F1EFE8", color:"#5F5E5A" };
   };
-  const filteredAdminProducts = products.filter(p =>
-    !adminSearch.trim() ||
-    p.name.toLowerCase().includes(adminSearch.toLowerCase()) ||
-    (p.category||"").toLowerCase().includes(adminSearch.toLowerCase())
-  );
+  const adminCategories = [...new Set(products.map(p => p.category).filter(Boolean))].sort();
+  const adminBrands = [...new Set(products.map(p => p.brand || "Ikka Dukka"))].sort();
+  const filteredAdminProducts = products.filter(p => {
+    if (adminSearch.trim() && !p.name.toLowerCase().includes(adminSearch.toLowerCase()) && !(p.category||"").toLowerCase().includes(adminSearch.toLowerCase())) return false;
+    if (adminBrandFilter && (p.brand || "Ikka Dukka") !== adminBrandFilter) return false;
+    if (adminCategoryFilter && p.category !== adminCategoryFilter) return false;
+    if (adminTierFilter && p.tier !== adminTierFilter) return false;
+    if (adminTagFilter && p.tagging_status !== adminTagFilter) return false;
+    if (adminStockFilter) {
+      const f = getFulfillmentState(p, 1);
+      if (adminStockFilter !== f.state) return false;
+    }
+    return true;
+  }).sort((a, b) => {
+    if (adminSort === "price_asc") return parseFloat(a.price) - parseFloat(b.price);
+    if (adminSort === "price_desc") return parseFloat(b.price) - parseFloat(a.price);
+    if (adminSort === "name") return a.name.localeCompare(b.name);
+    if (adminSort === "popularity") return (b.popularity||0) - (a.popularity||0);
+    return 0; // default: DB order (popularity desc)
+  });
   return (
     <>
       <style>{`
@@ -804,14 +825,74 @@ export default function App() {
             {adminView==="list"&&(
               <>
                 <div className="admin-eyebrow">
-                  <span>All Products &mdash; {products.length} items{adminSearch.trim()&&(" \u00b7 "+filteredAdminProducts.length+" shown")}</span>
+                  <span>All Products &mdash; {products.length} items{(adminSearch.trim()||adminBrandFilter||adminCategoryFilter||adminTierFilter||adminTagFilter||adminStockFilter)&&(" \u00b7 "+filteredAdminProducts.length+" shown")}</span>
                   <div style={{display:"flex",alignItems:"center",gap:12}}>
                     <span style={{fontSize:11,color:C.muted}}>{products.filter(p=>p.tagging_status==="needs_review").length} need review &middot; {products.filter(p=>!p.tagging_status||p.tagging_status==="untagged").length} untagged</span>
                     <button onClick={exportCSV} style={{padding:"5px 16px",background:C.ink,border:"none",color:"#fff",fontSize:10,letterSpacing:1.5,textTransform:"uppercase",cursor:"pointer",fontFamily:"inherit",flexShrink:0}}>Export CSV &darr;</button>
                   </div>
                 </div>
-                <div style={{marginBottom:16,maxWidth:400}}>
-                  <input type="text" placeholder="Search by name or category\u2026" value={adminSearch} onChange={e=>setAdminSearch(e.target.value)} style={{display:"block",width:"100%",padding:"9px 14px",background:"#fff",border:"0.5px solid "+C.rule,fontSize:14,fontFamily:"'EB Garamond',serif",color:C.ink,outline:"none"}}/>
+                {/* Filter bar */}
+                <div style={{background:"#fff",border:"0.5px solid "+C.rule,padding:"14px 16px",marginBottom:16,display:"flex",flexWrap:"wrap",gap:10,alignItems:"flex-end"}}>
+                  <div style={{flex:"2 1 180px",minWidth:140}}>
+                    <div style={{fontSize:9,letterSpacing:2,textTransform:"uppercase",color:C.muted,marginBottom:5}}>Search</div>
+                    <input type="text" placeholder="Name or category\u2026" value={adminSearch} onChange={e=>setAdminSearch(e.target.value)} style={{display:"block",width:"100%",padding:"7px 10px",background:C.stone,border:"0.5px solid "+C.rule,fontSize:13,fontFamily:"'EB Garamond',serif",color:C.ink,outline:"none"}}/>
+                  </div>
+                  {adminBrands.length > 1 && (
+                    <div style={{flex:"1 1 120px",minWidth:100}}>
+                      <div style={{fontSize:9,letterSpacing:2,textTransform:"uppercase",color:C.muted,marginBottom:5}}>Brand</div>
+                      <select value={adminBrandFilter} onChange={e=>setAdminBrandFilter(e.target.value)} style={{display:"block",width:"100%",padding:"7px 8px",background:adminBrandFilter?"#E6F1FB":C.stone,border:"0.5px solid "+(adminBrandFilter?C.cobalt:C.rule),fontSize:13,color:C.ink,outline:"none",cursor:"pointer"}}>
+                        <option value="">All brands</option>
+                        {adminBrands.map(b=><option key={b} value={b}>{b}</option>)}
+                      </select>
+                    </div>
+                  )}
+                  <div style={{flex:"1 1 140px",minWidth:120}}>
+                    <div style={{fontSize:9,letterSpacing:2,textTransform:"uppercase",color:C.muted,marginBottom:5}}>Category</div>
+                    <select value={adminCategoryFilter} onChange={e=>setAdminCategoryFilter(e.target.value)} style={{display:"block",width:"100%",padding:"7px 8px",background:adminCategoryFilter?"#E6F1FB":C.stone,border:"0.5px solid "+(adminCategoryFilter?C.cobalt:C.rule),fontSize:13,color:C.ink,outline:"none",cursor:"pointer"}}>
+                      <option value="">All categories</option>
+                      {adminCategories.map(c=><option key={c} value={c}>{c}</option>)}
+                    </select>
+                  </div>
+                  <div style={{flex:"1 1 100px",minWidth:90}}>
+                    <div style={{fontSize:9,letterSpacing:2,textTransform:"uppercase",color:C.muted,marginBottom:5}}>Tier</div>
+                    <select value={adminTierFilter} onChange={e=>setAdminTierFilter(e.target.value)} style={{display:"block",width:"100%",padding:"7px 8px",background:adminTierFilter?"#E6F1FB":C.stone,border:"0.5px solid "+(adminTierFilter?C.cobalt:C.rule),fontSize:13,color:C.ink,outline:"none",cursor:"pointer"}}>
+                      <option value="">All tiers</option>
+                      {["Silver","Gold","Platinum"].map(t=><option key={t} value={t}>{t}</option>)}
+                    </select>
+                  </div>
+                  <div style={{flex:"1 1 110px",minWidth:100}}>
+                    <div style={{fontSize:9,letterSpacing:2,textTransform:"uppercase",color:C.muted,marginBottom:5}}>Tags</div>
+                    <select value={adminTagFilter} onChange={e=>setAdminTagFilter(e.target.value)} style={{display:"block",width:"100%",padding:"7px 8px",background:adminTagFilter?"#E6F1FB":C.stone,border:"0.5px solid "+(adminTagFilter?C.cobalt:C.rule),fontSize:13,color:C.ink,outline:"none",cursor:"pointer"}}>
+                      <option value="">All statuses</option>
+                      <option value="tagged">Tagged</option>
+                      <option value="needs_review">Needs review</option>
+                      <option value="untagged">Untagged</option>
+                    </select>
+                  </div>
+                  <div style={{flex:"1 1 110px",minWidth:100}}>
+                    <div style={{fontSize:9,letterSpacing:2,textTransform:"uppercase",color:C.muted,marginBottom:5}}>Stock</div>
+                    <select value={adminStockFilter} onChange={e=>setAdminStockFilter(e.target.value)} style={{display:"block",width:"100%",padding:"7px 8px",background:adminStockFilter?"#E6F1FB":C.stone,border:"0.5px solid "+(adminStockFilter?C.cobalt:C.rule),fontSize:13,color:C.ink,outline:"none",cursor:"pointer"}}>
+                      <option value="">All stock</option>
+                      <option value="in_stock">In stock</option>
+                      <option value="low_stock">Low stock</option>
+                      <option value="mto">Made to order</option>
+                    </select>
+                  </div>
+                  <div style={{flex:"1 1 120px",minWidth:110}}>
+                    <div style={{fontSize:9,letterSpacing:2,textTransform:"uppercase",color:C.muted,marginBottom:5}}>Sort by</div>
+                    <select value={adminSort} onChange={e=>setAdminSort(e.target.value)} style={{display:"block",width:"100%",padding:"7px 8px",background:C.stone,border:"0.5px solid "+C.rule,fontSize:13,color:C.ink,outline:"none",cursor:"pointer"}}>
+                      <option value="default">Default</option>
+                      <option value="name">Name A–Z</option>
+                      <option value="price_asc">Price low–high</option>
+                      <option value="price_desc">Price high–low</option>
+                      <option value="popularity">Popularity</option>
+                    </select>
+                  </div>
+                  {(adminSearch||adminBrandFilter||adminCategoryFilter||adminTierFilter||adminTagFilter||adminStockFilter||adminSort!=="default")&&(
+                    <button onClick={()=>{setAdminSearch("");setAdminBrandFilter("");setAdminCategoryFilter("");setAdminTierFilter("");setAdminTagFilter("");setAdminStockFilter("");setAdminSort("default");}} style={{padding:"7px 14px",background:"transparent",border:"0.5px solid "+C.rule,color:C.muted,fontSize:10,letterSpacing:1.5,textTransform:"uppercase",cursor:"pointer",alignSelf:"flex-end",whiteSpace:"nowrap"}}>
+                      Clear &times;
+                    </button>
+                  )}
                 </div>
                 <div style={{background:"#fff",border:"0.5px solid "+C.rule,overflowX:"auto"}}>
                   <table className="admin-tbl">
