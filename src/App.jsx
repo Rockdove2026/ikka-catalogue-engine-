@@ -62,8 +62,20 @@ function scoreProduct(p, params) {
   const fulfillment = getFulfillmentState(p, qty);
   let score = p.popularity || 0;
   const price = priceAtQty(p.pricing_tiers, qty);
-  if (price <= budget) score += 30;
-  else if (price <= budget * 1.1) score += 10;
+
+  // Budget scoring: reward products close to the ceiling, penalise far below
+  if (budget < Infinity) {
+    const ratio = price / budget;
+    if (ratio > 1.1) score -= 40;           // over budget
+    else if (ratio > 1.0) score += 5;       // just over (10% buffer)
+    else if (ratio >= 0.75) score += 30;    // sweet spot: 75–100% of budget
+    else if (ratio >= 0.5) score += 15;     // acceptable: 50–75%
+    else if (ratio >= 0.3) score += 0;      // too cheap: 30–50% — no boost
+    else score -= 20;                        // clearly irrelevant: under 30%
+  } else {
+    score += 15; // no budget set, neutral
+  }
+
   if (params.occasion && params.occasion !== "All") {
     if ((p.occasions || "").toLowerCase().includes(params.occasion.toLowerCase())) score += 25;
   } else score += 15;
@@ -233,6 +245,8 @@ export default function App() {
       if (params.excludeFragile && p.fragile) return false;
       const price = priceAtQty(p.pricing_tiers, qty);
       if (budget < Infinity && price > budget * 1.1) return false;
+      // Price floor: if budget is set and a search intent is active, exclude products under 25% of budget
+      if (budget < Infinity && hasTagFilters && price < budget * 0.25) return false;
       if (tagFilter.exclude_tags.length > 0) {
         const pTags = productTagMap[p.id] || [];
         const tagSet = new Set(pTags.map(t => t.tag));
@@ -255,8 +269,14 @@ export default function App() {
         const kScore = keywordScore(p, freeQuery);
         const tScore = hasTagFilters ? tagScore(p.id) : 0;
         if (tScore < 0) return false;
+        // When tag filters are active (AI interpreted search), require tag relevance
         if (hasTagFilters && tScore === 0 && kScore === 0) return false;
-        if (hasTagFilters && tScore === 0 && kScore < 20) return false;
+        if (hasTagFilters && tScore === 0 && kScore < 30) return false;
+      } else if (hasTagFilters) {
+        // Tag filters set manually with no text query — still require some tag match
+        const tScore = tagScore(p.id);
+        if (tScore < 0) return false;
+        if (tScore === 0) return false;
       }
       return true;
     }).map(p => {
@@ -265,7 +285,7 @@ export default function App() {
       const tBoost = hasTagFilters ? tagScore(p.id) : 0;
       const kBoost = keywordScore(p, freeQuery);
       return { ...p, _score: Math.min(100, baseScore + tBoost + kBoost), _price: priceAtQty(p.pricing_tiers, qty), _tagBoost: tBoost, _fulfillment: fulfillment };
-    }).sort((a, b) => {
+    }).filter(p => !freeQuery.trim() || p._score > 0).sort((a, b) => {
       if (sortBy === "score") return b._score - a._score;
       if (sortBy === "price_asc") return a._price - b._price;
       if (sortBy === "price_desc") return b._price - a._price;
