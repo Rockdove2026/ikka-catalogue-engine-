@@ -135,21 +135,55 @@ export default function App() {
     loadProducts(); loadTagLibrary(); loadProductTags();
     fetch(CATALOGUE_URL + "/health").catch(()=>{});
   }, [loadProducts, loadTagLibrary, loadProductTags]);
+  const extractParamsFromQuery = useCallback((query) => {
+    const q = query.toLowerCase();
+    const updates = {};
+    // Budget: "budget 2000", "₹2000", "under 2000", "upto 2000", "2000 per", "2k"
+    const budgetMatch = q.match(/(?:budget|under|upto|up to|within|max|₹|rs\.?)\s*(\d[\d,]*k?)\b/i)
+      || q.match(/\b(\d[\d,]*k?)\s*(?:budget|per\s*(?:unit|piece|head|person)|each|rupees?|rs)\b/i);
+    if (budgetMatch) {
+      let val = budgetMatch[1].replace(/,/g, "");
+      if (val.endsWith("k")) val = String(parseFloat(val) * 1000);
+      updates.budget = val;
+    }
+    // Qty: "quantity 200", "200 units", "200 pieces", "qty 200", "for 200"
+    const qtyMatch = q.match(/(?:quantity|qty|for|quantity of|ordering)\s*(\d[\d,]*)\s*(?:units?|pieces?|people|persons?|employees?|pax)?/i)
+      || q.match(/\b(\d[\d,]*)\s*(?:units?|pieces?|pax|employees?|persons?)\b/i);
+    if (qtyMatch) {
+      const val = qtyMatch[1].replace(/,/g, "");
+      if (parseInt(val) > 0 && parseInt(val) < 100000) updates.qty = val;
+    }
+    // Days: "in 7 days", "within 2 weeks", "3 days"
+    const daysMatch = q.match(/(?:in|within|by)\s*(\d+)\s*days?/i);
+    const weeksMatch = q.match(/(?:in|within|by)\s*(\d+)\s*weeks?/i);
+    if (daysMatch) updates.days = daysMatch[1];
+    else if (weeksMatch) updates.days = String(parseInt(weeksMatch[1]) * 7);
+    if (Object.keys(updates).length > 0) setParams(p => ({ ...p, ...updates }));
+  }, []);
   const interpretQuery = useCallback(async (query) => {
     setKeywordOnly(false);
     if (!query.trim()) { setInterpreted(null); setTagFilter({ intent:"", audience:"", style:"", include_tags:[], exclude_tags:[] }); return; }
     setQueryLoading(true);
+    // Always extract numeric params from the raw query text
+    extractParamsFromQuery(query);
     try {
       const res = await fetch(CATALOGUE_URL + "/interpret-query", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ query }) });
       if (!res.ok) throw new Error("Failed");
       const data = await res.json();
       setInterpreted(data);
       setTagFilter({ intent:data.intent||"", audience:data.audience||"", style:data.style||"", include_tags:data.include_tags||[], exclude_tags:data.exclude_tags||[] });
+      // Apply structured params from AI response if present
+      setParams(p => ({
+        ...p,
+        ...(data.budget ? { budget: String(data.budget) } : {}),
+        ...(data.qty ? { qty: String(data.qty) } : {}),
+        ...(data.days ? { days: String(data.days) } : {}),
+      }));
       if (data.occasion && data.occasion !== "all") { const match = OCCASIONS.find(o => o.toLowerCase() === data.occasion.toLowerCase()); if (match) setParams(p => ({ ...p, occasion: match })); }
     } catch (e) { /* silent */ }
     setQueryLoading(false);
-  }, []);
-  const clearSearch = () => { setFreeQuery(""); setInterpreted(null); setTagFilter({ intent:"", audience:"", style:"", include_tags:[], exclude_tags:[] }); setKeywordOnly(false); };
+  }, [extractParamsFromQuery]);
+  const clearSearch = () => { setFreeQuery(""); setInterpreted(null); setTagFilter({ intent:"", audience:"", style:"", include_tags:[], exclude_tags:[] }); setKeywordOnly(false); setParams(p => ({ ...p, budget:"", qty:"", days:"" })); };
   const addExcludeTag = (tag) => { const t = tag.toLowerCase().trim().replace(/\s+/g, "-"); if (!t || tagFilter.exclude_tags.includes(t)) return; setTagFilter(prev => ({ ...prev, exclude_tags: [...prev.exclude_tags, t] })); setExcludeInput(""); };
   const removeExcludeTag = (tag) => { setTagFilter(prev => ({ ...prev, exclude_tags: prev.exclude_tags.filter(t => t !== tag) })); };
   const tagScore = useCallback((productId) => {
