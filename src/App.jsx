@@ -114,6 +114,8 @@ export default function App() {
   const [newTags, setNewTags] = useState({});
   const [keywordOnly, setKeywordOnly] = useState(false);
   const [detailProduct, setDetailProduct] = useState(null);
+  const [brandFilter, setBrandFilter] = useState("");
+  const [pdfProducts, setPdfProducts] = useState([]);
   const queryTimer = useRef(null);
   const loadTagLibrary = useCallback(async () => {
     const { data } = await supabase.from("tag_library").select("tag, dimension");
@@ -192,6 +194,7 @@ export default function App() {
     const qty = parseInt(params.qty) || 1;
     const budget = parseFloat(params.budget) || Infinity;
     return products.filter(p => {
+      if (brandFilter && (p.brand || "Ikka Dukka") !== brandFilter) return false;
       if (params.excludeEdible && p.edible) return false;
       if (params.excludeFragile && p.fragile) return false;
       const price = priceAtQty(p.pricing_tiers, qty);
@@ -234,14 +237,14 @@ export default function App() {
       if (sortBy === "price_desc") return b._price - a._price;
       return 0;
     });
-  }, [products, params, sortBy, tagScore, keywordScore, hasTagFilters, freeQuery]);
+  }, [products, params, sortBy, tagScore, keywordScore, hasTagFilters, freeQuery, brandFilter]);
   useEffect(() => { if (results.length > 0) setSelected(new Set(results.filter(p => p._score >= 40).map(p => p.id))); }, [results]);
   const logRequest = useCallback(async (url) => {
     await supabase.from("client_requests").insert([{ budget_per_unit:parseFloat(params.budget)||null, quantity:parseInt(params.qty)||null, occasion:params.occasion!=="All"?params.occasion:null, exclude_edible:params.excludeEdible, exclude_fragile:params.excludeFragile, results_count:results.length, pdf_url:url||null }]);
   }, [params, results]);
   const generatePDF = async () => {
     const qty = parseInt(params.qty) || 1;
-    const sel = results.filter(p => selected.has(p.id));
+    const sel = pdfProducts.length > 0 ? pdfProducts : selectedProducts;
     if (!sel.length) return;
     setPdfLoading(true); setPdfUrl(null);
     try {
@@ -400,6 +403,7 @@ export default function App() {
   const intentOptions = tagLibrary["intent"] || [];
   const audienceOptions = tagLibrary["audience"] || [];
   const styleOptions = tagLibrary["style"] || [];
+  const brandOptions = [...new Set(products.map(p => p.brand || "Ikka Dukka"))].sort();
   const stockBadge = (f) => {
     if (f.state === "in_stock")  return { bg:"#f0f8f0", color:"#3B6D11" };
     if (f.state === "low_stock") return { bg:"#FAEEDA", color:"#854F0B" };
@@ -642,6 +646,13 @@ export default function App() {
               <div><div className="s-toggle-lbl">Customisation required</div><div className="s-toggle-sub">Only show made-to-order products</div></div>
               <input type="checkbox" className="s-chk" checked={params.requireCustomisation} onChange={e=>setParams(p=>({...p,requireCustomisation:e.target.checked}))}/>
             </div>
+            <div className="s-section">Brand</div>
+            <div className="s-field">
+              <select className="s-sel" value={brandFilter} onChange={e=>setBrandFilter(e.target.value)}>
+                <option value="">All brands</option>
+                {brandOptions.map(b=><option key={b} value={b}>{b}</option>)}
+              </select>
+            </div>
             <div className="s-section">Smart Filters</div>
             <div className="s-field"><label className="s-label">Intent</label><select className="s-sel" value={tagFilter.intent} onChange={e=>setTagFilter(prev=>({...prev,intent:e.target.value}))}><option value="">Any intent</option>{intentOptions.map(t=><option key={t} value={t}>{t}</option>)}</select></div>
             <div className="s-field"><label className="s-label">Audience</label><select className="s-sel" value={tagFilter.audience} onChange={e=>setTagFilter(prev=>({...prev,audience:e.target.value}))}><option value="">Any audience</option>{audienceOptions.map(t=><option key={t} value={t}>{t}</option>)}</select></div>
@@ -717,7 +728,7 @@ export default function App() {
                     </div>
                     <div className="sel-btns">
                       <button className="sel-btn-sec" onClick={()=>setShowPreview(true)}>Preview catalogue</button>
-                      <button className="sel-btn-primary" onClick={()=>setShowPdfMeta(true)}>Generate PDF &rarr;</button>
+                      <button className="sel-btn-primary" onClick={()=>{setPdfProducts(selectedProducts);setShowPdfMeta(true);}}>Generate PDF &rarr;</button>
                       {pdfUrl&&<a href={pdfUrl} target="_blank" rel="noreferrer" style={{color:C.blue,fontSize:12}}>View PDF &#8599;</a>}
                     </div>
                   </div>
@@ -918,7 +929,7 @@ export default function App() {
           clientName={clientName}
           pdfLoading={pdfLoading}
           onClose={()=>setShowPreview(false)}
-          onGeneratePDF={()=>{setShowPreview(false);setShowPdfMeta(true);}}
+          onGeneratePDF={(activeProducts)=>{setPdfProducts(activeProducts);setShowPreview(false);setShowPdfMeta(true);}}
           C={C}
           TIER_COLOR={TIER_COLOR}
           getFulfillmentState={getFulfillmentState}
@@ -1114,7 +1125,7 @@ function PreviewOverlay({ selectedProducts, selected, setSelected, params, total
             <div className="prev-total">&#8377;{activeTotal.toLocaleString("en-IN")}</div>
             <div className="prev-gst">{qty} unit{qty > 1 ? "s" : ""} &middot; excl. GST</div>
           </div>
-          <button className="prev-generate" onClick={onGeneratePDF} disabled={pdfLoading || activeProducts.length === 0}>{pdfLoading ? "Generating\u2026" : "Generate PDF \u2192"}</button>
+          <button className="prev-generate" onClick={()=>onGeneratePDF(activeProducts)} disabled={pdfLoading || activeProducts.length === 0}>{pdfLoading ? "Generating\u2026" : "Generate PDF \u2192"}</button>
           <button className="prev-close" onClick={onClose}>Close &times;</button>
         </div>
       </div>
