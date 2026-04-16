@@ -97,6 +97,7 @@ export default function App() {
   const [pdfUrl, setPdfUrl] = useState(null);
   const [clientName, setClientName] = useState("");
   const [showPdfMeta, setShowPdfMeta] = useState(false);
+  const [hidePrice, setHidePrice] = useState(false);
   const [sortBy, setSortBy] = useState("score");
   const [freeQuery, setFreeQuery] = useState("");
   const [queryLoading, setQueryLoading] = useState(false);
@@ -315,7 +316,7 @@ export default function App() {
             const f = p._fulfillment || getFulfillmentState(p, qty);
             return { name:p.name, origin:p.category||"India", category:p.category||"General", price:Math.round(p._price), description:p.description||"", occasions:Array.isArray(p.occasions)?p.occasions:(p.occasions||"").split("|").map(s=>s.trim()).filter(Boolean), lead_time:f.leadTime, moq:f.effectiveMoq===1?"1 unit":f.effectiveMoq+" units", customisation:f.customisable?"Available on request":"Not available", images:p.image_url?[p.image_url]:[], whats_in_box:p.whats_in_box||[], box_dimensions:p.box_dimensions||"", weight_grams:p.weight_grams||null, stock_status:f.label };
           }),
-          meta: { client_name:clientName||"Valued Client", occasion:params.occasion!=="All"?params.occasion:"Corporate Gifting", event_date:"", valid_until:"" },
+          meta: { client_name:clientName||"Valued Client", occasion:params.occasion!=="All"?params.occasion:"Corporate Gifting", event_date:"", valid_until:"", hide_prices:hidePrice },
         }),
       });
       if (!res.ok) throw new Error("Service returned "+res.status);
@@ -1043,9 +1044,18 @@ export default function App() {
         <div className="overlay" onClick={()=>setShowPdfMeta(false)}>
           <div className="overlay-box" onClick={e=>e.stopPropagation()}>
             <div className="overlay-title">Generate Catalogue</div>
-            <div className="overlay-sub">{selectedProducts.length} products selected</div>
+            <div className="overlay-sub">{pdfProducts.length || selectedProducts.length} products selected</div>
             <label className="o-label">Client / Company Name</label>
             <input className="o-inp" type="text" placeholder="e.g. Axis Bank" value={clientName} onChange={e=>setClientName(e.target.value)}/>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 0",borderTop:"0.5px solid "+C.rule,borderBottom:"0.5px solid "+C.rule,marginBottom:20}}>
+              <div>
+                <div style={{fontSize:13,color:C.ink}}>Hide prices</div>
+                <div style={{fontSize:11,color:C.muted,marginTop:2}}>Prices will not appear in the PDF</div>
+              </div>
+              <div onClick={()=>setHidePrice(h=>!h)} style={{width:40,height:22,borderRadius:99,background:hidePrice?C.cobalt:C.rule,cursor:"pointer",position:"relative",transition:"background 0.2s",flexShrink:0}}>
+                <div style={{position:"absolute",top:3,left:hidePrice?20:3,width:16,height:16,borderRadius:"50%",background:"#fff",transition:"left 0.2s",boxShadow:"0 1px 3px rgba(0,0,0,0.2)"}}/>
+              </div>
+            </div>
             <div className="o-btns">
               <button className="o-btn-s" onClick={()=>setShowPdfMeta(false)}>Cancel</button>
               <button className="o-btn-p" onClick={generatePDF} disabled={pdfLoading}>{pdfLoading?"Generating\u2026":"Generate & Download \u2192"}</button>
