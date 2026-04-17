@@ -63,17 +63,17 @@ function scoreProduct(p, params) {
   let score = p.popularity || 0;
   const price = priceAtQty(p.pricing_tiers, qty);
 
-  // Budget scoring: reward products close to the ceiling, penalise far below
+  // Budget scoring: tightly proportional — reward products that use the budget well
   if (budget < Infinity) {
     const ratio = price / budget;
-    if (ratio > 1.1) score -= 40;           // over budget
-    else if (ratio > 1.0) score += 5;       // just over (10% buffer)
-    else if (ratio >= 0.75) score += 30;    // sweet spot: 75–100% of budget
-    else if (ratio >= 0.5) score += 15;     // acceptable: 50–75%
-    else if (ratio >= 0.3) score += 0;      // too cheap: 30–50% — no boost
-    else score -= 20;                        // clearly irrelevant: under 30%
+    if (ratio > 1.1)        score -= 40;  // over budget
+    else if (ratio > 1.0)   score += 5;   // just over (10% buffer)
+    else if (ratio >= 0.8)  score += 35;  // sweet spot: 80–100%
+    else if (ratio >= 0.6)  score += 20;  // decent: 60–80%
+    else if (ratio >= 0.4)  score -= 10;  // too cheap: 40–60%
+    else                    score -= 35;  // far too cheap: under 40%
   } else {
-    score += 15; // no budget set, neutral
+    score += 15;
   }
 
   if (params.occasion && params.occasion !== "All") {
@@ -251,9 +251,9 @@ export default function App() {
       if (params.excludeEdible && p.edible) return false;
       if (params.excludeFragile && p.fragile) return false;
       const price = priceAtQty(p.pricing_tiers, qty);
-      if (budget < Infinity && price > budget * 1.1) return false;
-      // Price floor: if budget is set and a search intent is active, exclude products under 25% of budget
-      if (budget < Infinity && hasTagFilters && price < budget * 0.25) return false;
+      if (budget < Infinity && price > budget * 1.2) return false;
+      // Price floor: exclude products under 40% of budget whenever a budget is set
+      if (budget < Infinity && price < budget * 0.7) return false;
       if (tagFilter.exclude_tags.length > 0) {
         const pTags = productTagMap[p.id] || [];
         const tagSet = new Set(pTags.map(t => t.tag));
