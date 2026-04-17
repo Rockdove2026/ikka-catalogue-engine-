@@ -43,12 +43,15 @@ const TAG_DIMS = ["intent","audience","persona","sensitivity","perceived_value",
 function getFulfillmentState(product, qty = 1) {
   const stock = product.stock_quantity ?? 100;
   const mtoMoq = product.mto_moq || product.moq || 1;
+  // In stock: enough stock to fulfil the full quantity
   if (stock >= 10 && stock >= qty) {
     return { state: "in_stock", label: "In stock", leadTime: product.lead_time || "2-3 working days", effectiveMoq: 1, customisable: false, belowMoq: false };
   }
-  if (stock >= 1 && stock < 10) {
-    return { state: "low_stock", label: "Low stock", leadTime: product.lead_time || "2-3 working days", effectiveMoq: 1, customisable: false, belowMoq: qty > stock };
+  // Low stock: some stock but under 10 units AND enough for requested qty
+  if (stock >= 1 && stock < 10 && stock >= qty) {
+    return { state: "low_stock", label: "Low stock", leadTime: product.lead_time || "2-3 working days", effectiveMoq: 1, customisable: false, belowMoq: false };
   }
+  // MTO: stock is 0, or stock exists but can't fulfil the requested quantity
   return { state: "mto", label: "Made to order", leadTime: product.mto_lead_time || product.lead_time || "4-6 weeks", effectiveMoq: mtoMoq, customisable: true, belowMoq: qty < mtoMoq };
 }
 function priceAtQty(tiers, qty) {
@@ -135,6 +138,7 @@ export default function App() {
   const [detailProduct, setDetailProduct] = useState(null);
   const [brandFilter, setBrandFilter] = useState("");
   const [pdfProducts, setPdfProducts] = useState([]);
+  const [priceOverrides, setPriceOverrides] = useState({});
   const queryTimer = useRef(null);
   const loadTagLibrary = useCallback(async () => {
     const { data } = await supabase.from("tag_library").select("tag, dimension");
@@ -314,7 +318,8 @@ export default function App() {
         body: JSON.stringify({
           products: sel.map(p => {
             const f = p._fulfillment || getFulfillmentState(p, qty);
-            return { name:p.name, origin:p.category||"India", category:p.category||"General", price:Math.round(p._price), description:p.description||"", occasions:Array.isArray(p.occasions)?p.occasions:(p.occasions||"").split("|").map(s=>s.trim()).filter(Boolean), lead_time:f.leadTime, moq:f.effectiveMoq===1?"1 unit":f.effectiveMoq+" units", customisation:f.customisable?"Available on request":"Not available", images:p.image_url?[p.image_url]:[], whats_in_box:p.whats_in_box||[], box_dimensions:p.box_dimensions||"", weight_grams:p.weight_grams||null, stock_status:f.label };
+            const finalPrice = priceOverrides[p.id] != null ? priceOverrides[p.id] : Math.round(p._price);
+            return { name:p.name, origin:p.category||"India", category:p.category||"General", price:finalPrice, description:p.description||"", occasions:Array.isArray(p.occasions)?p.occasions:(p.occasions||"").split("|").map(s=>s.trim()).filter(Boolean), lead_time:f.leadTime, moq:f.effectiveMoq===1?"1 unit":f.effectiveMoq+" units", customisation:f.customisable?"Available on request":"Not available", images:p.image_url?[p.image_url]:[], whats_in_box:p.whats_in_box||[], box_dimensions:p.box_dimensions||"", weight_grams:p.weight_grams||null, stock_status:f.label };
           }),
           meta: { client_name:clientName||"Valued Client", occasion:params.occasion!=="All"?params.occasion:"Corporate Gifting", event_date:"", valid_until:"", hide_prices:hidePrice },
         }),
@@ -1079,6 +1084,8 @@ export default function App() {
           TIER_COLOR={TIER_COLOR}
           getFulfillmentState={getFulfillmentState}
           stockBadge={stockBadge}
+          priceOverrides={priceOverrides}
+          setPriceOverrides={setPriceOverrides}
         />
       )}
       {detailProduct&&(
@@ -1245,11 +1252,14 @@ export default function App() {
     </>
   );
 }
-function PreviewOverlay({ selectedProducts, selected, setSelected, params, totalBudget, clientName, pdfLoading, onClose, onGeneratePDF, C, TIER_COLOR, getFulfillmentState, stockBadge, allProducts }) {
+function PreviewOverlay({ selectedProducts, selected, setSelected, params, totalBudget, clientName, pdfLoading, onClose, onGeneratePDF, C, TIER_COLOR, getFulfillmentState, stockBadge, allProducts, priceOverrides, setPriceOverrides }) {
   const [addSearch, setAddSearch] = useState("");
   const qty = parseInt(params.qty) || 1;
   const activeProducts = selectedProducts.filter(p => selected.has(p.id));
-  const activeTotal = activeProducts.reduce((s,p) => s + p._price * qty, 0);
+  const activeTotal = activeProducts.reduce((s,p) => {
+    const price = priceOverrides[p.id] != null ? priceOverrides[p.id] : p._price;
+    return s + price * qty;
+  }, 0);
   const removeProduct = (id) => { setSelected(prev => { const n = new Set(prev); n.delete(id); return n; }); };
   const addProduct = (id) => { setSelected(prev => { const n = new Set(prev); n.add(id); return n; }); };
   const notSelected = (allProducts || []).filter(p => !selected.has(p.id));
@@ -1288,8 +1298,16 @@ function PreviewOverlay({ selectedProducts, selected, setSelected, params, total
                 <div className="prev-cat">{p.category}</div>
                 <div className="prev-name">{p.name}</div>
                 <div className="prev-price-row">
-                  <div className="prev-price">&#8377;{p._price.toLocaleString("en-IN")}</div>
-                  <div className="prev-per">per unit</div>
+                  <div style={{display:"flex",alignItems:"baseline",gap:4}}>
+                    <span style={{fontSize:13,color:C.muted,fontFamily:"'EB Garamond',serif"}}>&#8377;</span>
+                    <input
+                      type="number"
+                      value={priceOverrides[p.id] != null ? priceOverrides[p.id] : Math.round(p._price)}
+                      onChange={e=>setPriceOverrides(prev=>({...prev,[p.id]:parseFloat(e.target.value)||0}))}
+                      style={{fontFamily:"'Playfair Display',serif",fontSize:18,fontWeight:900,color:priceOverrides[p.id]!=null?C.cobalt:C.ink,border:"none",borderBottom:"1px solid "+(priceOverrides[p.id]!=null?C.cobalt:C.rule),background:"transparent",outline:"none",width:90,padding:"2px 0"}}
+                    />
+                  </div>
+                  <div className="prev-per">per unit{priceOverrides[p.id]!=null&&<span style={{fontSize:9,color:C.cobalt,marginLeft:4,letterSpacing:1,textTransform:"uppercase"}}>edited</span>}</div>
                 </div>
               </div>
             </div>
