@@ -413,6 +413,16 @@ export default function App() {
       const payload = { name:form.name, category:form.category, price:parseFloat(form.price), tier:form.tier, image_url:form.image_url, occasions:form.occasions, description:form.description, edible:form.edible, fragile:form.fragile, customisable:form.customisable, popularity:parseInt(form.popularity)||50, lead_time:form.lead_time||null, active:true, whats_in_box:form.whats_in_box||[], box_dimensions:form.box_dimensions||null, weight_grams:form.weight_grams?parseInt(form.weight_grams):null, moq:form.moq?parseInt(form.moq):null, stock_quantity:form.stock_quantity!==''?parseInt(form.stock_quantity):100, mto_moq:form.mto_moq?parseInt(form.mto_moq):null, mto_lead_time:form.mto_lead_time||null, keywords:form.keywords||null };
       if (editProduct) {
         await supabase.from("catalog").update(payload).eq("id",editProduct.id);
+        // Re-generate pricing tiers based on the new price
+        const newPrice = parseFloat(form.price);
+        await supabase.from("pricing_tiers").delete().eq("product_id",editProduct.id);
+        await supabase.from("pricing_tiers").insert([
+          {product_id:editProduct.id,min_qty:1,  max_qty:99,  price_per_unit:newPrice},
+          {product_id:editProduct.id,min_qty:100, max_qty:199, price_per_unit:newPrice*0.85},
+          {product_id:editProduct.id,min_qty:200, max_qty:499, price_per_unit:newPrice*0.80},
+          {product_id:editProduct.id,min_qty:500, max_qty:999, price_per_unit:newPrice*0.70},
+          {product_id:editProduct.id,min_qty:1000,max_qty:null,price_per_unit:newPrice*0.60},
+        ]);
       } else {
         const { data:ins } = await supabase.from("catalog").insert([payload]).select().single();
         if (ins) await supabase.from("pricing_tiers").insert([{product_id:ins.id,min_qty:1,max_qty:99,price_per_unit:parseFloat(form.price)},{product_id:ins.id,min_qty:100,max_qty:199,price_per_unit:parseFloat(form.price)*0.85},{product_id:ins.id,min_qty:200,max_qty:499,price_per_unit:parseFloat(form.price)*0.80},{product_id:ins.id,min_qty:500,max_qty:999,price_per_unit:parseFloat(form.price)*0.70},{product_id:ins.id,min_qty:1000,max_qty:null,price_per_unit:parseFloat(form.price)*0.60}]);
