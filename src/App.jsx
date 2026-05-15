@@ -458,7 +458,7 @@ export default function App() {
         await supabase.from("pricing_tiers").insert([{product_id:ins.id,min_qty:1,max_qty:99,price_per_unit:p},{product_id:ins.id,min_qty:100,max_qty:199,price_per_unit:p*0.85},{product_id:ins.id,min_qty:200,max_qty:499,price_per_unit:p*0.80},{product_id:ins.id,min_qty:500,max_qty:999,price_per_unit:p*0.70},{product_id:ins.id,min_qty:1000,max_qty:null,price_per_unit:p*0.60}]);
         const hasTags = TAG_DIMS.some(d => row[d] && row[d].trim());
         if (hasTags) {
-          const tagRows = [];    Object.entries(TAG_DIM_MAP).forEach(([col,dim])=>{if(!row[col]||!row[col].trim())return;row[col].split("|").map(t=>t.trim()).filter(Boolean).forEach(tag=>{tagRows.push({product_id:ins.id,tag,dimension:dim,confidence:90,ai_suggested:true,human_confirmed:false});});});, confidence:90, ai_suggested:true, human_confirmed:false }));
+          const tagRows = Object.entries(TAG_DIM_MAP).flatMap(([col,dim])=>(row[col]&&row[col].trim())?row[col].split("|").map(t=>t.trim()).filter(Boolean).map(tag=>({product_id:ins.id,tag,dimension:dim,confidence:90,ai_suggested:true,human_confirmed:false})):[]);
           if (tagRows.length) await supabase.from("product_tags").insert(tagRows);
           const required = ["intent","audience","perceived_value","brand_signal","style"];
           const allCovered = required.every(d => row[d] && row[d].trim());
