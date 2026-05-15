@@ -38,7 +38,7 @@ const DIMENSIONS = [
   { key: "occasion",        label: "Occasion",          required: false },
   { key: "sustainability",  label: "Sustainability",    required: false },
 ];
-const TAG_DIMS = ["intent","audience","persona","sensitivity","perceived_value","usage","functional","brand_signal","style","emotional","occasion_tag","sustainability"];
+const TAG_DIM_MAP = {"intent":"intent","audience":"audience","persona":"persona","sensitivity":"sensitivity","perceived_value":"perceived_value","usage":"usage","functional":"functional","brand_signal":"brand_signal","style":"style","emotional":"emotional","occasion_tag":"occasion","sustainability":"sustainability","gift_archetype":"gift_archetype","logistics":"logistics","performance":"performance","price_positioning":"price_positioning","timeline":"timeline","visual_attributes":"visual_attributes"}; const TAG_DIMS = Object.keys(TAG_DIM_MAP);
 
 function getFulfillmentState(product, qty = 1) {
   const stock = product.stock_quantity ?? 100;
@@ -458,7 +458,7 @@ export default function App() {
         await supabase.from("pricing_tiers").insert([{product_id:ins.id,min_qty:1,max_qty:99,price_per_unit:p},{product_id:ins.id,min_qty:100,max_qty:199,price_per_unit:p*0.85},{product_id:ins.id,min_qty:200,max_qty:499,price_per_unit:p*0.80},{product_id:ins.id,min_qty:500,max_qty:999,price_per_unit:p*0.70},{product_id:ins.id,min_qty:1000,max_qty:null,price_per_unit:p*0.60}]);
         const hasTags = TAG_DIMS.some(d => row[d] && row[d].trim());
         if (hasTags) {
-          const tagRows = TAG_DIMS.filter(d => row[d] && row[d].trim()).map(d => ({ product_id:ins.id, tag:row[d].trim(), dimension:d, confidence:90, ai_suggested:true, human_confirmed:false }));
+          const tagRows = [];    Object.entries(TAG_DIM_MAP).forEach(([col,dim])=>{if(!row[col]||!row[col].trim())return;row[col].split("|").map(t=>t.trim()).filter(Boolean).forEach(tag=>{tagRows.push({product_id:ins.id,tag,dimension:dim,confidence:90,ai_suggested:true,human_confirmed:false});});});, confidence:90, ai_suggested:true, human_confirmed:false }));
           if (tagRows.length) await supabase.from("product_tags").insert(tagRows);
           const required = ["intent","audience","perceived_value","brand_signal","style"];
           const allCovered = required.every(d => row[d] && row[d].trim());
