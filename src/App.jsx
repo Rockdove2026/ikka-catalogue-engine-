@@ -89,7 +89,7 @@ function scoreProduct(p, params) {
   if (params.requireCustomisation && !fulfillment.customisable) score -= 50;
   return Math.min(100, Math.max(0, score));
 }
-export default function App() {
+function CatalogueApp() {
   const [tab, setTab] = useState("query");
   const [params, setParams] = useState({ budget:"", qty:"", days:"", occasion:"All", excludeEdible:false, excludeFragile:false, requireCustomisation:false });
   const [products, setProducts] = useState([]);
@@ -1370,5 +1370,130 @@ function PreviewOverlay({ selectedProducts, selected, setSelected, params, total
         </div>
       </div>
     </div>
+  );
+}
+
+
+/* ============================================================
+   AUTH GATE — Phase 1.2
+   Everything below wraps the existing tool behind a Supabase
+   login. The tool itself (CatalogueApp above) is unchanged.
+   ============================================================ */
+
+function LoginScreen() {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState(null); // {kind:"error"|"info", text}
+
+  const signIn = async () => {
+    if (!email.trim() || !password) { setMsg({kind:"error", text:"Enter your email and password."}); return; }
+    setBusy(true); setMsg(null);
+    const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
+    setBusy(false);
+    if (error) setMsg({kind:"error", text: error.message === "Invalid login credentials" ? "Email or password is incorrect." : error.message});
+    // on success, onAuthStateChange in App flips to the tool automatically
+  };
+
+  const sendMagicLink = async () => {
+    if (!email.trim()) { setMsg({kind:"error", text:"Enter your email first, then tap the link button."}); return; }
+    setBusy(true); setMsg(null);
+    const { error } = await supabase.auth.signInWithOtp({
+      email: email.trim(),
+      options: { emailRedirectTo: window.location.origin, shouldCreateUser: false },
+    });
+    setBusy(false);
+    if (error) setMsg({kind:"error", text: error.message});
+    else setMsg({kind:"info", text:"Check your inbox — we sent you a sign-in link."});
+  };
+
+  const field = {
+    display:"block", width:"100%", boxSizing:"border-box", padding:"11px 13px",
+    background:"#fff", border:"1px solid "+C.rule, fontSize:15,
+    fontFamily:"'EB Garamond',serif", color:C.ink, outline:"none", borderRadius:3,
+  };
+
+  return (
+    <div style={{minHeight:"100vh", background:C.stone, display:"flex", alignItems:"center", justifyContent:"center", padding:24}}>
+      <div style={{width:"100%", maxWidth:380}}>
+        <div style={{textAlign:"center", marginBottom:28}}>
+          <div style={{fontSize:10, letterSpacing:3, textTransform:"uppercase", color:C.muted, marginBottom:8}}>Ikka Dukka &middot; Rock Dove</div>
+          <div style={{fontFamily:"'Playfair Display',serif", fontSize:26, fontWeight:900, color:C.ink}}>Catalogue Engine</div>
+          <div style={{fontSize:13, color:C.muted, marginTop:6, fontStyle:"italic"}}>Staff sign-in required</div>
+        </div>
+        <div style={{background:"#fff", border:"0.5px solid "+C.rule, padding:"28px 26px"}}>
+          <label style={{display:"block", fontSize:10, letterSpacing:1.5, textTransform:"uppercase", color:C.muted, marginBottom:6}}>Email</label>
+          <input type="email" autoComplete="email" value={email} onChange={e=>setEmail(e.target.value)}
+            onKeyDown={e=>{ if(e.key==="Enter") signIn(); }} style={{...field, marginBottom:16}} />
+          <label style={{display:"block", fontSize:10, letterSpacing:1.5, textTransform:"uppercase", color:C.muted, marginBottom:6}}>Password</label>
+          <input type="password" autoComplete="current-password" value={password} onChange={e=>setPassword(e.target.value)}
+            onKeyDown={e=>{ if(e.key==="Enter") signIn(); }} style={{...field, marginBottom:20}} />
+          {msg && (
+            <div style={{marginBottom:16, padding:"9px 12px", fontSize:13, borderRadius:3,
+              background: msg.kind==="error" ? "#FBEDEC" : "#EFF5EF",
+              color: msg.kind==="error" ? C.red : C.green,
+              border: "0.5px solid " + (msg.kind==="error" ? C.red : C.green)}}>
+              {msg.text}
+            </div>
+          )}
+          <button onClick={signIn} disabled={busy}
+            style={{display:"block", width:"100%", padding:"12px 0", background:C.ink, color:"#fff", border:"none",
+              fontSize:11, letterSpacing:2, textTransform:"uppercase", cursor: busy?"default":"pointer", opacity: busy?0.6:1, fontFamily:"inherit"}}>
+            {busy ? "Signing in\u2026" : "Sign in"}
+          </button>
+          <button onClick={sendMagicLink} disabled={busy}
+            style={{display:"block", width:"100%", padding:"11px 0", marginTop:10, background:"transparent", color:C.muted,
+              border:"0.5px solid "+C.rule, fontSize:10, letterSpacing:1.5, textTransform:"uppercase", cursor: busy?"default":"pointer", fontFamily:"inherit"}}>
+            Email me a sign-in link instead
+          </button>
+        </div>
+        <div style={{textAlign:"center", fontSize:11, color:C.muted, marginTop:16}}>
+          Access is limited to Rock Dove staff accounts.
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SignOutPill({ email }) {
+  const [busy, setBusy] = useState(false);
+  return (
+    <div style={{position:"fixed", bottom:12, right:12, zIndex:9999, display:"flex", alignItems:"center", gap:8,
+      background:"rgba(14,12,11,0.92)", color:"#fff", padding:"6px 8px 6px 12px", borderRadius:4, fontSize:11}}>
+      <span style={{opacity:0.75, maxWidth:180, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap"}}>{email}</span>
+      <button onClick={async ()=>{ setBusy(true); await supabase.auth.signOut(); setBusy(false); }}
+        disabled={busy}
+        style={{background:"transparent", border:"0.5px solid rgba(255,255,255,0.4)", color:"#fff", padding:"3px 10px",
+          fontSize:10, letterSpacing:1.5, textTransform:"uppercase", cursor:"pointer", borderRadius:3, fontFamily:"inherit"}}>
+        {busy ? "\u2026" : "Sign out"}
+      </button>
+    </div>
+  );
+}
+
+export default function App() {
+  const [session, setSession] = useState(undefined); // undefined = still checking
+
+  useEffect(() => {
+    let alive = true;
+    supabase.auth.getSession().then(({ data }) => { if (alive) setSession(data.session ?? null); });
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, s) => { if (alive) setSession(s); });
+    return () => { alive = false; sub.subscription.unsubscribe(); };
+  }, []);
+
+  if (session === undefined) {
+    return (
+      <div style={{minHeight:"100vh", background:C.stone, display:"flex", alignItems:"center", justifyContent:"center",
+        fontFamily:"'EB Garamond',serif", color:C.muted, fontSize:14, fontStyle:"italic"}}>
+        Checking sign-in&hellip;
+      </div>
+    );
+  }
+  if (!session) return <LoginScreen />;
+  return (
+    <>
+      <CatalogueApp />
+      <SignOutPill email={session.user?.email || ""} />
+    </>
   );
 }
