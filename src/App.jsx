@@ -17,6 +17,10 @@ const C = {
 };
 const CATALOGUE_URL = import.meta.env.VITE_CATALOGUE_SERVICE_URL ||
   "https://ikka-catalogue-service-production.up.railway.app";
+// Service token for locked backend endpoints. Staff paste it once (Conversations tab);
+// it lives only in this browser's localStorage — never in the code bundle.
+const getAdminToken = () => { try { return localStorage.getItem("ik_admin_token") || ""; } catch { return ""; } };
+const adminHeaders = () => { const t = getAdminToken(); return t ? { "X-Admin-Token": t } : {}; };
 const OCCASIONS = ["All","Diwali","New Year","Birthday","Work Anniversary","Deal Milestone","Onboarding","Thank You","Corporate Event","Custom"];
 const TIER_COLOR = { Platinum: C.cobalt, Gold: C.gold, Silver: C.muted };
 const STATUS_STYLE = {
@@ -89,6 +93,128 @@ function scoreProduct(p, params) {
   if (params.requireCustomisation && !fulfillment.customisable) score -= 50;
   return Math.min(100, Math.max(0, score));
 }
+function ConversationsView() {
+  const [sessions, setSessions] = useState(null);        // null = loading
+  const [err, setErr] = useState("");
+  const [sel, setSel] = useState(null);
+  const [tx, setTx] = useState(null);
+  const [txLoading, setTxLoading] = useState(false);
+  const [tok, setTok] = useState(getAdminToken());
+  const [savedFlash, setSavedFlash] = useState(false);
+
+  const fmtTime = (t) => { try { return t ? new Date(t).toLocaleString("en-IN", {day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"}) : ""; } catch { return t || ""; } };
+
+  const load = async () => {
+    setErr(""); setSessions(null);
+    try {
+      const r = await fetch(CATALOGUE_URL + "/admin/sessions", { method:"POST", headers:{"Content-Type":"application/json", ...adminHeaders()}, body:"{}" });
+      if (!r.ok) throw new Error(r.status === 401 ? "Service token missing or incorrect — paste it above and press Save." : "Server error (HTTP " + r.status + ")");
+      const d = await r.json();
+      setSessions(d.sessions || []);
+    } catch (e) { setErr(String(e.message || e)); setSessions([]); }
+  };
+  useEffect(() => { load(); }, []);
+
+  const openSession = async (sess) => {
+    setSel(sess); setTx(null); setTxLoading(true);
+    try {
+      const r = await fetch(CATALOGUE_URL + "/admin/transcript", { method:"POST", headers:{"Content-Type":"application/json", ...adminHeaders()}, body: JSON.stringify({ session_id: sess.id }) });
+      const d = await r.json();
+      setTx({ messages: d.messages || [], submissions: d.submissions || [] });
+    } catch (e) { setTx({ messages: [], submissions: [] }); }
+    setTxLoading(false);
+  };
+
+  const saveTok = () => {
+    try { localStorage.setItem("ik_admin_token", tok.trim()); } catch {}
+    setSavedFlash(true); setTimeout(() => setSavedFlash(false), 1500);
+    load();
+  };
+
+  const cell = { fontSize: 9, letterSpacing: 2, textTransform: "uppercase", color: C.muted, marginBottom: 5 };
+
+  return (
+    <div style={{ padding: "24px 28px", maxWidth: 1200, margin: "0 auto" }}>
+      {/* Service token bar */}
+      <div style={{ background: "#fff", border: "0.5px solid " + C.rule, padding: "12px 16px", marginBottom: 16, display: "flex", gap: 10, alignItems: "flex-end", flexWrap: "wrap" }}>
+        <div style={{ flex: "1 1 260px" }}>
+          <div style={cell}>Service token (paste once — stays in this browser)</div>
+          <input type="password" value={tok} onChange={(e) => setTok(e.target.value)} placeholder="Not set — viewer works without it until the lock is switched on"
+            style={{ display: "block", width: "100%", padding: "7px 10px", background: C.stone, border: "0.5px solid " + C.rule, fontSize: 13, color: C.ink, outline: "none", fontFamily: "inherit" }} />
+        </div>
+        <button onClick={saveTok} style={{ padding: "8px 18px", background: C.ink, border: "none", color: "#fff", fontSize: 10, letterSpacing: 1.5, textTransform: "uppercase", cursor: "pointer", fontFamily: "inherit" }}>{savedFlash ? "Saved ✓" : "Save"}</button>
+        <button onClick={load} style={{ padding: "8px 18px", background: "transparent", border: "0.5px solid " + C.rule, color: C.ink, fontSize: 10, letterSpacing: 1.5, textTransform: "uppercase", cursor: "pointer", fontFamily: "inherit" }}>Refresh</button>
+      </div>
+
+      {err && <div style={{ background: "#FBEDEC", border: "0.5px solid " + C.red, color: C.red, padding: "10px 14px", fontSize: 13, marginBottom: 16 }}>{err}</div>}
+
+      <div style={{ display: "flex", gap: 16, alignItems: "flex-start" }}>
+        {/* Session list */}
+        <div style={{ flex: "0 0 340px", background: "#fff", border: "0.5px solid " + C.rule, maxHeight: "70vh", overflowY: "auto" }}>
+          <div style={{ ...cell, padding: "12px 14px 0" }}>Sessions{Array.isArray(sessions) ? " — " + sessions.length : ""}</div>
+          {sessions === null && <div style={{ padding: 14, fontSize: 13, color: C.muted }}>Loading…</div>}
+          {Array.isArray(sessions) && sessions.length === 0 && !err && <div style={{ padding: 14, fontSize: 13, color: C.muted }}>No sessions yet.</div>}
+          {Array.isArray(sessions) && sessions.map((sess) => (
+            <div key={sess.id} onClick={() => openSession(sess)}
+              style={{ padding: "10px 14px", borderTop: "0.5px solid " + C.rule, cursor: "pointer", background: sel && sel.id === sess.id ? C.warm : "transparent" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
+                <div style={{ fontSize: 14, color: C.ink, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {sess.client_name || sess.token || sess.id}
+                </div>
+                {sess.active === false && <span style={{ fontSize: 9, letterSpacing: 1, textTransform: "uppercase", color: C.red, flexShrink: 0 }}>Off</span>}
+              </div>
+              <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>
+                {(sess.client_company ? sess.client_company + " · " : "")}{sess.message_count} message{sess.message_count === 1 ? "" : "s"}
+                {sess.last_message_at ? " · " + fmtTime(sess.last_message_at) : ""}
+              </div>
+              {sess.token && <div style={{ fontSize: 10, color: C.muted, marginTop: 2, fontFamily: "monospace" }}>{sess.token}</div>}
+            </div>
+          ))}
+        </div>
+
+        {/* Transcript */}
+        <div style={{ flex: "1 1 auto", background: "#fff", border: "0.5px solid " + C.rule, maxHeight: "70vh", overflowY: "auto", padding: "14px 18px" }}>
+          {!sel && <div style={{ fontSize: 13, color: C.muted, padding: 20 }}>Select a session on the left to read its conversation.</div>}
+          {sel && txLoading && <div style={{ fontSize: 13, color: C.muted, padding: 20 }}>Loading transcript…</div>}
+          {sel && tx && !txLoading && (
+            <>
+              <div style={{ ...cell }}>Transcript — {sel.client_name || sel.token || sel.id}</div>
+              {tx.messages.length === 0 && <div style={{ fontSize: 13, color: C.muted, padding: "12px 0" }}>No messages recorded for this session.</div>}
+              {tx.messages.map((m, i) => (
+                <div key={i} style={{ margin: "10px 0", display: "flex", flexDirection: "column", alignItems: m.role === "user" ? "flex-end" : "flex-start" }}>
+                  <div style={{ fontSize: 9, letterSpacing: 1.5, textTransform: "uppercase", color: C.muted, marginBottom: 3 }}>
+                    {m.role === "user" ? "Client" : "Dove"}{m.created_at ? " · " + fmtTime(m.created_at) : ""}
+                  </div>
+                  <div style={{ maxWidth: "78%", padding: "9px 13px", fontSize: 14, lineHeight: 1.45, whiteSpace: "pre-wrap",
+                    background: m.role === "user" ? "#E6F1FB" : C.stone, border: "0.5px solid " + C.rule, color: C.ink }}>
+                    {m.message}
+                  </div>
+                </div>
+              ))}
+              {tx.submissions.length > 0 && (
+                <div style={{ marginTop: 18, borderTop: "0.5px solid " + C.rule, paddingTop: 12 }}>
+                  <div style={cell}>Submissions ({tx.submissions.length})</div>
+                  {tx.submissions.map((sub, i) => {
+                    const items = Array.isArray(sub.items) ? sub.items : [];
+                    const names = items.map((it) => (it && it.name) || "").filter(Boolean);
+                    return (
+                      <div key={i} style={{ fontSize: 13, color: C.ink, margin: "6px 0", background: C.stone, border: "0.5px solid " + C.rule, padding: "8px 12px" }}>
+                        <div style={{ color: C.muted, fontSize: 11 }}>{fmtTime(sub.created_at)}</div>
+                        {(sub.brief_summary || sub.brief) && <div style={{ margin: "3px 0" }}>{sub.brief_summary || sub.brief}</div>}
+                        {names.length > 0 && <div style={{ fontSize: 12 }}>Shortlisted: {names.slice(0, 6).join(", ")}{names.length > 6 ? " +" + (names.length - 6) + " more" : ""}</div>}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function CatalogueApp() {
   const [tab, setTab] = useState("query");
   const [params, setParams] = useState({ budget:"", qty:"", days:"", occasion:"All", excludeEdible:false, excludeFragile:false, requireCustomisation:false });
@@ -190,7 +316,7 @@ function CatalogueApp() {
     // Always extract numeric params from the raw query text
     extractParamsFromQuery(query);
     try {
-      const res = await fetch(CATALOGUE_URL + "/interpret-query", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ query }) });
+      const res = await fetch(CATALOGUE_URL + "/interpret-query", { method:"POST", headers:{"Content-Type":"application/json", ...adminHeaders()}, body:JSON.stringify({ query }) });
       if (!res.ok) throw new Error("Failed");
       const data = await res.json();
       setInterpreted(data);
@@ -314,7 +440,7 @@ function CatalogueApp() {
     setPdfLoading(true); setPdfUrl(null);
     try {
       const res = await fetch(CATALOGUE_URL + "/generate-catalogue", {
-        method:"POST", headers:{"Content-Type":"application/json"},
+        method:"POST", headers:{"Content-Type":"application/json", ...adminHeaders()},
         body: JSON.stringify({
           products: sel.map(p => {
             const f = p._fulfillment || getFulfillmentState(p, qty);
@@ -364,7 +490,7 @@ function CatalogueApp() {
       return;
     }
     try {
-      const res = await fetch(CATALOGUE_URL + "/auto-tag", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ product_id:product.id, name:product.name, category:product.category||"", description:product.description||"", tier:product.tier||"", occasions:product.occasions||"", price:product.price }) });
+      const res = await fetch(CATALOGUE_URL + "/auto-tag", { method:"POST", headers:{"Content-Type":"application/json", ...adminHeaders()}, body:JSON.stringify({ product_id:product.id, name:product.name, category:product.category||"", description:product.description||"", tier:product.tier||"", occasions:product.occasions||"", price:product.price }) });
       if (!res.ok) throw new Error("Auto-tag failed: "+res.status);
       const data = await res.json();
       const grouped = {};
@@ -464,7 +590,7 @@ function CatalogueApp() {
           const allCovered = required.every(d => row[d] && row[d].trim());
           await supabase.from("catalog").update({ tagging_status:allCovered?"tagged":"needs_review", tagging_updated_at:new Date().toISOString() }).eq("id", ins.id);
         } else {
-          fetch(CATALOGUE_URL+"/auto-tag",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({product_id:ins.id,name:ins.name,category:ins.category||"",description:ins.description||"",tier:ins.tier||"",occasions:ins.occasions||"",price:ins.price})}).then(r=>r.json()).then(async(tagData)=>{if(!tagData.tags?.length)return;const tagRows=tagData.tags.map(t=>({product_id:ins.id,tag:t.tag,dimension:t.dimension,confidence:t.confidence,ai_suggested:true,human_confirmed:false}));await supabase.from("product_tags").insert(tagRows);await supabase.from("catalog").update({tagging_status:tagData.tagging_status,tagging_updated_at:new Date().toISOString()}).eq("id",ins.id);}).catch(()=>{});
+          fetch(CATALOGUE_URL+"/auto-tag",{method:"POST",headers:{"Content-Type":"application/json", ...adminHeaders()},body:JSON.stringify({product_id:ins.id,name:ins.name,category:ins.category||"",description:ins.description||"",tier:ins.tier||"",occasions:ins.occasions||"",price:ins.price})}).then(r=>r.json()).then(async(tagData)=>{if(!tagData.tags?.length)return;const tagRows=tagData.tags.map(t=>({product_id:ins.id,tag:t.tag,dimension:t.dimension,confidence:t.confidence,ai_suggested:true,human_confirmed:false}));await supabase.from("product_tags").insert(tagRows);await supabase.from("catalog").update({tagging_status:tagData.tagging_status,tagging_updated_at:new Date().toISOString()}).eq("id",ins.id);}).catch(()=>{});
         }
         ok++;
       }
@@ -691,7 +817,7 @@ function CatalogueApp() {
           <div className="hdr-sub">Catalogue Engine</div>
         </div>
         <div className="hdr-tabs">
-          {[["query","Query"],["admin","Admin"]].map(([k,l])=>(
+          {[["query","Query"],["admin","Admin"],["chats","Conversations"]].map(([k,l])=>(
             <button key={k} className={"hdr-tab"+(tab===k?" on":"")} onClick={()=>setTab(k)}>{l}</button>
           ))}
         </div>
@@ -829,6 +955,7 @@ function CatalogueApp() {
           </div>
         </div>
       )}
+      {tab==="chats"&&<ConversationsView/>}
       {tab==="admin"&&(
         <div className="admin-layout">
           <div className="admin-side">
