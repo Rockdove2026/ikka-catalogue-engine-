@@ -1542,6 +1542,15 @@ function LoginScreen() {
     else setMsg({kind:"info", text:"Check your inbox — we sent you a sign-in link."});
   };
 
+  const sendReset = async () => {
+    if (!email.trim()) { setMsg({kind:"error", text:"Enter your email first, then tap the reset link."}); return; }
+    setBusy(true); setMsg(null);
+    const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), { redirectTo: window.location.origin });
+    setBusy(false);
+    if (error) setMsg({kind:"error", text: error.message});
+    else setMsg({kind:"info", text:"Check your inbox — we sent a password reset link."});
+  };
+
   const field = {
     display:"block", width:"100%", boxSizing:"border-box", padding:"11px 13px",
     background:"#fff", border:"1px solid "+C.rule, fontSize:15,
@@ -1581,6 +1590,11 @@ function LoginScreen() {
               border:"0.5px solid "+C.rule, fontSize:10, letterSpacing:1.5, textTransform:"uppercase", cursor: busy?"default":"pointer", fontFamily:"inherit"}}>
             Email me a sign-in link instead
           </button>
+          <button onClick={sendReset} disabled={busy}
+            style={{display:"block", width:"100%", marginTop:14, background:"none", border:"none", color:C.muted,
+              fontSize:12, fontStyle:"italic", textDecoration:"underline", cursor: busy?"default":"pointer", fontFamily:"inherit"}}>
+            Forgot your password?
+          </button>
         </div>
         <div style={{textAlign:"center", fontSize:11, color:C.muted, marginTop:16}}>
           Access is limited to Rock Dove staff accounts.
@@ -1590,12 +1604,78 @@ function LoginScreen() {
   );
 }
 
-function SignOutPill({ email }) {
+function SetPasswordScreen({ onDone }) {
+  const [pw1, setPw1] = useState("");
+  const [pw2, setPw2] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState(null);
+
+  const save = async () => {
+    if (pw1.length < 8) { setMsg({kind:"error", text:"Use at least 8 characters."}); return; }
+    if (pw1 !== pw2) { setMsg({kind:"error", text:"The two passwords don't match."}); return; }
+    setBusy(true); setMsg(null);
+    const { error } = await supabase.auth.updateUser({ password: pw1 });
+    setBusy(false);
+    if (error) { setMsg({kind:"error", text: error.message}); return; }
+    onDone();
+  };
+
+  const field = {
+    display:"block", width:"100%", boxSizing:"border-box", padding:"11px 13px",
+    background:"#fff", border:"1px solid "+C.rule, fontSize:15,
+    fontFamily:"'EB Garamond',serif", color:C.ink, outline:"none", borderRadius:3,
+  };
+
+  return (
+    <div style={{minHeight:"100vh", background:C.stone, display:"flex", alignItems:"center", justifyContent:"center", padding:24}}>
+      <div style={{width:"100%", maxWidth:380}}>
+        <div style={{textAlign:"center", marginBottom:28}}>
+          <div style={{fontSize:10, letterSpacing:3, textTransform:"uppercase", color:C.muted, marginBottom:8}}>Ikka Dukka &middot; Rock Dove</div>
+          <div style={{fontFamily:"'Playfair Display',serif", fontSize:26, fontWeight:900, color:C.ink}}>Set a new password</div>
+          <div style={{fontSize:13, color:C.muted, marginTop:6, fontStyle:"italic"}}>Choose a password for your staff account</div>
+        </div>
+        <div style={{background:"#fff", border:"0.5px solid "+C.rule, padding:"28px 26px"}}>
+          <label style={{display:"block", fontSize:10, letterSpacing:1.5, textTransform:"uppercase", color:C.muted, marginBottom:6}}>New password</label>
+          <input type="password" autoComplete="new-password" value={pw1} onChange={e=>setPw1(e.target.value)}
+            onKeyDown={e=>{ if(e.key==="Enter") save(); }} style={{...field, marginBottom:16}} />
+          <label style={{display:"block", fontSize:10, letterSpacing:1.5, textTransform:"uppercase", color:C.muted, marginBottom:6}}>Repeat it</label>
+          <input type="password" autoComplete="new-password" value={pw2} onChange={e=>setPw2(e.target.value)}
+            onKeyDown={e=>{ if(e.key==="Enter") save(); }} style={{...field, marginBottom:20}} />
+          {msg && (
+            <div style={{marginBottom:16, padding:"9px 12px", fontSize:13, borderRadius:3,
+              background: msg.kind==="error" ? "#FBEDEC" : "#EFF5EF",
+              color: msg.kind==="error" ? C.red : C.green,
+              border: "0.5px solid " + (msg.kind==="error" ? C.red : C.green)}}>
+              {msg.text}
+            </div>
+          )}
+          <button onClick={save} disabled={busy}
+            style={{display:"block", width:"100%", padding:"12px 0", background:C.ink, color:"#fff", border:"none",
+              fontSize:11, letterSpacing:2, textTransform:"uppercase", cursor: busy?"default":"pointer", opacity: busy?0.6:1, fontFamily:"inherit"}}>
+            {busy ? "Saving\u2026" : "Save password"}
+          </button>
+          <button onClick={onDone} disabled={busy}
+            style={{display:"block", width:"100%", marginTop:14, background:"none", border:"none", color:C.muted,
+              fontSize:12, fontStyle:"italic", textDecoration:"underline", cursor: busy?"default":"pointer", fontFamily:"inherit"}}>
+            Skip for now
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SignOutPill({ email, onChangePassword }) {
   const [busy, setBusy] = useState(false);
   return (
     <div style={{position:"fixed", bottom:12, right:12, zIndex:9999, display:"flex", alignItems:"center", gap:8,
       background:"rgba(14,12,11,0.92)", color:"#fff", padding:"6px 8px 6px 12px", borderRadius:4, fontSize:11}}>
       <span style={{opacity:0.75, maxWidth:180, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap"}}>{email}</span>
+      <button onClick={onChangePassword}
+        style={{background:"transparent", border:"0.5px solid rgba(255,255,255,0.4)", color:"#fff", padding:"3px 10px",
+          fontSize:10, letterSpacing:1.5, textTransform:"uppercase", cursor:"pointer", borderRadius:3, fontFamily:"inherit"}}>
+        Password
+      </button>
       <button onClick={async ()=>{ setBusy(true); await supabase.auth.signOut(); setBusy(false); }}
         disabled={busy}
         style={{background:"transparent", border:"0.5px solid rgba(255,255,255,0.4)", color:"#fff", padding:"3px 10px",
@@ -1608,11 +1688,16 @@ function SignOutPill({ email }) {
 
 export default function App() {
   const [session, setSession] = useState(undefined); // undefined = still checking
+  const [recoveryMode, setRecoveryMode] = useState(false); // true after a reset-email landing or the Password button
 
   useEffect(() => {
     let alive = true;
     supabase.auth.getSession().then(({ data }) => { if (alive) { setSession(data.session ?? null); setStaffAccessToken(data.session?.access_token); } });
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, s) => { if (alive) { setSession(s); setStaffAccessToken(s?.access_token); } });
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, s) => {
+      if (!alive) return;
+      setSession(s); setStaffAccessToken(s?.access_token);
+      if (_event === "PASSWORD_RECOVERY") setRecoveryMode(true);
+    });
     return () => { alive = false; sub.subscription.unsubscribe(); };
   }, []);
 
@@ -1625,10 +1710,11 @@ export default function App() {
     );
   }
   if (!session) return <LoginScreen />;
+  if (recoveryMode) return <SetPasswordScreen onDone={()=>setRecoveryMode(false)} />;
   return (
     <>
       <CatalogueApp />
-      <SignOutPill email={session.user?.email || ""} />
+      <SignOutPill email={session.user?.email || ""} onChangePassword={()=>setRecoveryMode(true)} />
     </>
   );
 }
