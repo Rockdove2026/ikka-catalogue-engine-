@@ -21,6 +21,14 @@ const CATALOGUE_URL = import.meta.env.VITE_CATALOGUE_SERVICE_URL ||
 // it lives only in this browser's localStorage — never in the code bundle.
 const getAdminToken = () => { try { return localStorage.getItem("ik_admin_token") || ""; } catch { return ""; } };
 const adminHeaders = () => { const t = getAdminToken(); return t ? { "X-Admin-Token": t } : {}; };
+// Per-person staff auth: the signed-in user's own Supabase access token, kept fresh
+// by the auth listener in App(). Day-to-day tools (interpret, auto-tag, catalogue PDF)
+// send this instead of the shared admin token; the backend verifies it against
+// rd_programme_users. Falls back to the admin token so an existing browser that
+// holds one keeps working during rollout. /admin/* stays admin-token-only.
+let _staffAccessToken = "";
+const setStaffAccessToken = (t) => { _staffAccessToken = t || ""; };
+const staffHeaders = () => _staffAccessToken ? { Authorization: "Bearer " + _staffAccessToken } : adminHeaders();
 const OCCASIONS = ["All","Diwali","New Year","Birthday","Work Anniversary","Deal Milestone","Onboarding","Thank You","Corporate Event","Custom"];
 const TIER_COLOR = { Platinum: C.cobalt, Gold: C.gold, Silver: C.muted };
 const STATUS_STYLE = {
@@ -316,7 +324,7 @@ function CatalogueApp() {
     // Always extract numeric params from the raw query text
     extractParamsFromQuery(query);
     try {
-      const res = await fetch(CATALOGUE_URL + "/interpret-query", { method:"POST", headers:{"Content-Type":"application/json", ...adminHeaders()}, body:JSON.stringify({ query }) });
+      const res = await fetch(CATALOGUE_URL + "/interpret-query", { method:"POST", headers:{"Content-Type":"application/json", ...staffHeaders()}, body:JSON.stringify({ query }) });
       if (!res.ok) throw new Error("Failed");
       const data = await res.json();
       setInterpreted(data);
@@ -440,7 +448,7 @@ function CatalogueApp() {
     setPdfLoading(true); setPdfUrl(null);
     try {
       const res = await fetch(CATALOGUE_URL + "/generate-catalogue", {
-        method:"POST", headers:{"Content-Type":"application/json", ...adminHeaders()},
+        method:"POST", headers:{"Content-Type":"application/json", ...staffHeaders()},
         body: JSON.stringify({
           products: sel.map(p => {
             const f = p._fulfillment || getFulfillmentState(p, qty);
@@ -490,7 +498,7 @@ function CatalogueApp() {
       return;
     }
     try {
-      const res = await fetch(CATALOGUE_URL + "/auto-tag", { method:"POST", headers:{"Content-Type":"application/json", ...adminHeaders()}, body:JSON.stringify({ product_id:product.id, name:product.name, category:product.category||"", description:product.description||"", tier:product.tier||"", occasions:product.occasions||"", price:product.price }) });
+      const res = await fetch(CATALOGUE_URL + "/auto-tag", { method:"POST", headers:{"Content-Type":"application/json", ...staffHeaders()}, body:JSON.stringify({ product_id:product.id, name:product.name, category:product.category||"", description:product.description||"", tier:product.tier||"", occasions:product.occasions||"", price:product.price }) });
       if (!res.ok) throw new Error("Auto-tag failed: "+res.status);
       const data = await res.json();
       const grouped = {};
@@ -590,7 +598,7 @@ function CatalogueApp() {
           const allCovered = required.every(d => row[d] && row[d].trim());
           await supabase.from("catalog").update({ tagging_status:allCovered?"tagged":"needs_review", tagging_updated_at:new Date().toISOString() }).eq("id", ins.id);
         } else {
-          fetch(CATALOGUE_URL+"/auto-tag",{method:"POST",headers:{"Content-Type":"application/json", ...adminHeaders()},body:JSON.stringify({product_id:ins.id,name:ins.name,category:ins.category||"",description:ins.description||"",tier:ins.tier||"",occasions:ins.occasions||"",price:ins.price})}).then(r=>r.json()).then(async(tagData)=>{if(!tagData.tags?.length)return;const tagRows=tagData.tags.map(t=>({product_id:ins.id,tag:t.tag,dimension:t.dimension,confidence:t.confidence,ai_suggested:true,human_confirmed:false}));await supabase.from("product_tags").insert(tagRows);await supabase.from("catalog").update({tagging_status:tagData.tagging_status,tagging_updated_at:new Date().toISOString()}).eq("id",ins.id);}).catch(()=>{});
+          fetch(CATALOGUE_URL+"/auto-tag",{method:"POST",headers:{"Content-Type":"application/json", ...staffHeaders()},body:JSON.stringify({product_id:ins.id,name:ins.name,category:ins.category||"",description:ins.description||"",tier:ins.tier||"",occasions:ins.occasions||"",price:ins.price})}).then(r=>r.json()).then(async(tagData)=>{if(!tagData.tags?.length)return;const tagRows=tagData.tags.map(t=>({product_id:ins.id,tag:t.tag,dimension:t.dimension,confidence:t.confidence,ai_suggested:true,human_confirmed:false}));await supabase.from("product_tags").insert(tagRows);await supabase.from("catalog").update({tagging_status:tagData.tagging_status,tagging_updated_at:new Date().toISOString()}).eq("id",ins.id);}).catch(()=>{});
         }
         ok++;
       }
@@ -1603,8 +1611,8 @@ export default function App() {
 
   useEffect(() => {
     let alive = true;
-    supabase.auth.getSession().then(({ data }) => { if (alive) setSession(data.session ?? null); });
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, s) => { if (alive) setSession(s); });
+    supabase.auth.getSession().then(({ data }) => { if (alive) { setSession(data.session ?? null); setStaffAccessToken(data.session?.access_token); } });
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, s) => { if (alive) { setSession(s); setStaffAccessToken(s?.access_token); } });
     return () => { alive = false; sub.subscription.unsubscribe(); };
   }, []);
 
